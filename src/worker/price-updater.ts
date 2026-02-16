@@ -1,0 +1,78 @@
+import { redis } from '../store/redis.js';
+import { KEYS } from '../store/keys.js';
+import { logger } from '../utils/logger.js';
+import type { HlAllMids, HlActiveAssetCtx, HlL2Book } from '../types/hl.js';
+
+export type PriceUpdateCallback = () => void;
+
+export class PriceUpdater {
+  private onUpdate: PriceUpdateCallback;
+
+  constructor(onUpdate: PriceUpdateCallback) {
+    this.onUpdate = onUpdate;
+  }
+
+  async handleMessage(channel: string, data: unknown): Promise<void> {
+    switch (channel) {
+      case 'allMids':
+        await this.handleAllMids(data as HlAllMids);
+        break;
+      case 'activeAssetCtx':
+        await this.handleActiveAssetCtx(data as HlActiveAssetCtx);
+        break;
+      case 'l2Book':
+        await this.handleL2Book(data as HlL2Book);
+        break;
+    }
+  }
+
+  private async handleAllMids(data: HlAllMids): Promise<void> {
+    const mids = data.mids;
+    if (!mids || typeof mids !== 'object') return;
+
+    const entries = Object.entries(mids);
+    if (entries.length === 0) return;
+
+    const pipeline = redis.pipeline();
+    const args: string[] = [];
+    for (const [coin, px] of entries) {
+      args.push(coin, px);
+    }
+    pipeline.hset(KEYS.MARKET_MIDS, ...args);
+    await pipeline.exec();
+
+    this.onUpdate();
+  }
+
+  private async handleActiveAssetCtx(data: HlActiveAssetCtx): Promise<void> {
+    if (!data.coin || !data.ctx) return;
+
+    const ctx = data.ctx;
+    await redis.hset(KEYS.MARKET_CTX(data.coin),
+      'markPx', ctx.markPx ?? '',
+      'oraclePx', ctx.oraclePx ?? '',
+      'funding', ctx.funding ?? '',
+      'openInterest', ctx.openInterest ?? '',
+      'prevDayPx', ctx.prevDayPx ?? '',
+      'dayNtlVlm', ctx.dayNtlVlm ?? '',
+      'premium', ctx.premium ?? '',
+    );
+  }
+
+  private async handleL2Book(data: HlL2Book): Promise<void> {
+    if (!data.coin) return;
+    await redis.set(KEYS.MARKET_L2(data.coin), JSON.stringify(data));
+  }
+
+  async seedMids(mids: Record<string, string>): Promise<void> {
+    const entries = Object.entries(mids);
+    if (entries.length === 0) return;
+
+    const args: string[] = [];
+    for (const [coin, px] of entries) {
+      args.push(coin, px);
+    }
+    await redis.hset(KEYS.MARKET_MIDS, ...args);
+    logger.info({ count: entries.length }, 'Seeded mids');
+  }
+}
