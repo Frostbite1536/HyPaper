@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
 import { logger } from '../utils/logger.js';
@@ -7,6 +8,11 @@ import type { PaperOrder, PaperFill } from '../types/order.js';
 
 export class OrderMatcher {
   private isRunning = false;
+  private eventBus: EventEmitter;
+
+  constructor(eventBus: EventEmitter) {
+    this.eventBus = eventBus;
+  }
 
   async matchAll(): Promise<void> {
     if (this.isRunning) return;
@@ -274,6 +280,13 @@ export class OrderMatcher {
       closedPnl,
       newSzi,
     }, 'Order filled');
+
+    this.eventBus.emit('fill', { userId, fill });
+    this.eventBus.emit('orderUpdate', {
+      userId,
+      order: { ...order, status: 'filled' as const, filledSz: order.sz, avgPx: fillPx, updatedAt: now },
+      status: 'filled',
+    });
   }
 
   private getFillDir(startPosition: string, signedFillSz: string): string {

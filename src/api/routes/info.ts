@@ -8,16 +8,33 @@ import { logger } from '../../utils/logger.js';
 
 export const infoRouter = new Hono();
 
+// --- Proxy cache ---
+
+interface CacheEntry {
+  data: unknown;
+  expiry: number;
+}
+
+// TTL per proxied type (ms)
+const PROXY_TTL: Record<string, number> = {
+  meta: 60_000,
+  metaAndAssetCtxs: 2_000,
+  l2Book: 1_000,
+  candleSnapshot: 5_000,
+  fundingHistory: 30_000,
+  perpsAtOpenInterest: 10_000,
+  predictedFundings: 10_000,
+};
+
+const DEFAULT_PROXY_TTL = 5_000;
+const proxyCache = new Map<string, CacheEntry>();
+
+function getCacheKey(body: Record<string, unknown>): string {
+  return JSON.stringify(body);
+}
+
 // Endpoints proxied to real HL API
-const PROXIED_TYPES = new Set([
-  'meta',
-  'metaAndAssetCtxs',
-  'candleSnapshot',
-  'fundingHistory',
-  'l2Book',
-  'perpsAtOpenInterest',
-  'predictedFundings',
-]);
+const PROXIED_TYPES = new Set(Object.keys(PROXY_TTL));
 
 infoRouter.post('/', async (c) => {
   const userId = c.get('userId');
@@ -31,7 +48,7 @@ infoRouter.post('/', async (c) => {
   try {
     // Check if we should proxy to real HL
     if (PROXIED_TYPES.has(type)) {
-      return proxyToHL(c, body);
+      return cachedProxyToHL(c, body);
     }
 
     // Handle locally from Redis
@@ -82,8 +99,8 @@ infoRouter.post('/', async (c) => {
       }
 
       default: {
-        // Try to proxy unknown types to HL
-        return proxyToHL(c, body);
+        // Try to proxy unknown types to HL (with default TTL)
+        return cachedProxyToHL(c, body);
       }
     }
   } catch (err) {
@@ -92,12 +109,31 @@ infoRouter.post('/', async (c) => {
   }
 });
 
-async function proxyToHL(c: any, body: unknown) {
+async function cachedProxyToHL(c: any, body: Record<string, unknown>) {
+  const key = getCacheKey(body);
+  const now = Date.now();
+
+  const cached = proxyCache.get(key);
+  if (cached && cached.expiry > now) {
+    return c.json(cached.data);
+  }
+
   const res = await fetch(`${config.HL_API_URL}/info`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   const data = await res.json();
+
+  const ttl = PROXY_TTL[body.type as string] ?? DEFAULT_PROXY_TTL;
+  proxyCache.set(key, { data, expiry: now + ttl });
+
+  // Evict expired entries periodically (keep map from growing unbounded)
+  if (proxyCache.size > 500) {
+    for (const [k, v] of proxyCache) {
+      if (v.expiry <= now) proxyCache.delete(k);
+    }
+  }
+
   return c.json(data);
 }

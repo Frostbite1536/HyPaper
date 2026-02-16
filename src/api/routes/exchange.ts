@@ -9,16 +9,31 @@ exchangeRouter.post('/', async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json();
 
-  // HL exchange requests have: action, nonce, signature, vaultAddress
-  // We only care about action
   const action: HlExchangeAction = body.action;
-  if (!action) {
-    return c.json({ status: 'err', response: 'Missing action' }, 400);
+  if (!action || typeof action !== 'object' || !action.type) {
+    return c.json({ status: 'err', response: 'Missing or invalid action' }, 400);
   }
 
   try {
     switch (action.type) {
       case 'order': {
+        if (!Array.isArray(action.orders) || action.orders.length === 0) {
+          return c.json({ status: 'err', response: 'Missing orders array' }, 400);
+        }
+        if (action.orders.length > 50) {
+          return c.json({ status: 'err', response: 'Max 50 orders per request' }, 400);
+        }
+        for (const o of action.orders) {
+          if (typeof o.a !== 'number' || typeof o.b !== 'boolean' ||
+              typeof o.p !== 'string' || typeof o.s !== 'string' ||
+              typeof o.r !== 'boolean' || !o.t?.limit?.tif) {
+            return c.json({ status: 'err', response: 'Invalid order wire format' }, 400);
+          }
+          if (Number(o.s) <= 0 || Number(o.p) <= 0) {
+            return c.json({ status: 'err', response: 'Size and price must be positive' }, 400);
+          }
+        }
+
         const statuses = await placeOrders(userId, action.orders, action.grouping);
         return c.json({
           status: 'ok',
@@ -30,6 +45,15 @@ exchangeRouter.post('/', async (c) => {
       }
 
       case 'cancel': {
+        if (!Array.isArray(action.cancels) || action.cancels.length === 0) {
+          return c.json({ status: 'err', response: 'Missing cancels array' }, 400);
+        }
+        for (const cancel of action.cancels) {
+          if (typeof cancel.a !== 'number' || typeof cancel.o !== 'number') {
+            return c.json({ status: 'err', response: 'Invalid cancel format: need a (asset) and o (oid)' }, 400);
+          }
+        }
+
         const statuses = await cancelOrders(userId, action.cancels);
         return c.json({
           status: 'ok',
@@ -41,6 +65,15 @@ exchangeRouter.post('/', async (c) => {
       }
 
       case 'cancelByCloid': {
+        if (!Array.isArray(action.cancels) || action.cancels.length === 0) {
+          return c.json({ status: 'err', response: 'Missing cancels array' }, 400);
+        }
+        for (const cancel of action.cancels) {
+          if (typeof cancel.asset !== 'number' || typeof cancel.cloid !== 'string') {
+            return c.json({ status: 'err', response: 'Invalid cancelByCloid format: need asset and cloid' }, 400);
+          }
+        }
+
         const statuses = await cancelByCloid(userId, action.cancels);
         return c.json({
           status: 'ok',
@@ -52,6 +85,13 @@ exchangeRouter.post('/', async (c) => {
       }
 
       case 'updateLeverage': {
+        if (typeof action.asset !== 'number' || typeof action.leverage !== 'number' || typeof action.isCross !== 'boolean') {
+          return c.json({ status: 'err', response: 'updateLeverage requires asset (number), leverage (number), isCross (boolean)' }, 400);
+        }
+        if (action.leverage < 1 || action.leverage > 200) {
+          return c.json({ status: 'err', response: 'Leverage must be between 1 and 200' }, 400);
+        }
+
         await updateLeverage(userId, action.asset, action.isCross, action.leverage);
         return c.json({
           status: 'ok',

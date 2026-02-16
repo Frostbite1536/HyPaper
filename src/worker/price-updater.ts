@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
 import { logger } from '../utils/logger.js';
@@ -7,9 +8,11 @@ export type PriceUpdateCallback = () => void;
 
 export class PriceUpdater {
   private onUpdate: PriceUpdateCallback;
+  private eventBus: EventEmitter;
 
-  constructor(onUpdate: PriceUpdateCallback) {
+  constructor(onUpdate: PriceUpdateCallback, eventBus: EventEmitter) {
     this.onUpdate = onUpdate;
+    this.eventBus = eventBus;
   }
 
   async handleMessage(channel: string, data: unknown): Promise<void> {
@@ -41,6 +44,7 @@ export class PriceUpdater {
     pipeline.hset(KEYS.MARKET_MIDS, ...args);
     await pipeline.exec();
 
+    this.eventBus.emit('mids', { mids });
     this.onUpdate();
   }
 
@@ -62,6 +66,7 @@ export class PriceUpdater {
   private async handleL2Book(data: HlL2Book): Promise<void> {
     if (!data.coin) return;
     await redis.set(KEYS.MARKET_L2(data.coin), JSON.stringify(data));
+    this.eventBus.emit('l2book', { coin: data.coin, levels: data.levels, time: data.time });
   }
 
   async seedMids(mids: Record<string, string>): Promise<void> {

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { HTTPException } from 'hono/http-exception';
 import { authMiddleware } from './middleware/auth.js';
+import { rateLimitMiddleware } from './middleware/rate-limit.js';
 import { exchangeRouter } from './routes/exchange.js';
 import { infoRouter } from './routes/info.js';
 import { hypaperRouter } from './routes/hypaper.js';
@@ -30,10 +30,13 @@ app.get('/info', (c) => c.json(postOnlyMsg, 405));
 app.get('/exchange', (c) => c.json(postOnlyMsg, 405));
 app.get('/hypaper', (c) => c.json(postOnlyMsg, 405));
 
-// Auth middleware for API routes
+// Auth + rate limiting for API routes
 app.use('/exchange', authMiddleware);
 app.use('/info', authMiddleware);
 app.use('/hypaper', authMiddleware);
+app.use('/exchange', rateLimitMiddleware);
+app.use('/info', rateLimitMiddleware);
+app.use('/hypaper', rateLimitMiddleware);
 
 // Routes
 app.route('/exchange', exchangeRouter);

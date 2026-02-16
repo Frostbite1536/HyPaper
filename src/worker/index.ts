@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { config } from '../config.js';
 import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
@@ -7,17 +8,19 @@ import { PriceUpdater } from './price-updater.js';
 import { OrderMatcher } from './order-matcher.js';
 import type { HlMeta, HlAssetCtx } from '../types/hl.js';
 
+export const eventBus = new EventEmitter();
+
 export class Worker {
   private wsClient: HlWebSocketClient | null = null;
   private priceUpdater: PriceUpdater;
   private orderMatcher: OrderMatcher;
 
   constructor() {
-    this.orderMatcher = new OrderMatcher();
+    this.orderMatcher = new OrderMatcher(eventBus);
     this.priceUpdater = new PriceUpdater(() => {
       // Fire-and-forget match on every price update
       this.orderMatcher.matchAll();
-    });
+    }, eventBus);
 
     this.wsClient = new HlWebSocketClient((channel, data) => {
       this.priceUpdater.handleMessage(channel, data);

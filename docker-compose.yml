@@ -7,5 +7,20 @@ services:
       - redis-data:/data
     command: redis-server --appendonly yes
 
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - PORT=3000
+      - DEFAULT_BALANCE=100000
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    profiles:
+      - prod
+
 volumes:
   redis-data:

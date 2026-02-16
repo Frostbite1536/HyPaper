@@ -5,10 +5,11 @@ import { lte, gte, isZero, gt, lt } from '../utils/math.js';
 import { nextOid } from '../utils/id.js';
 import { checkMarginForOrder } from './margin.js';
 import { OrderMatcher } from '../worker/order-matcher.js';
+import { eventBus } from '../worker/index.js';
 import type { HlOrderWire, HlCancelRequest, HlCancelByCloidRequest, HlOrderResponseStatus, HlMeta } from '../types/hl.js';
 import type { PaperOrder } from '../types/order.js';
 
-const matcher = new OrderMatcher();
+const matcher = new OrderMatcher(eventBus);
 
 export async function resolveAssetCoin(asset: number): Promise<string | null> {
   const metaRaw = await redis.get(KEYS.MARKET_META);
@@ -184,6 +185,8 @@ async function placeTriggeredOrder(
   await redis.sadd(KEYS.ORDERS_TRIGGERS, oid.toString());
   await redis.zadd(KEYS.USER_ORDERS(userId), now, oid.toString());
 
+  eventBus.emit('orderUpdate', { userId, order, status: 'open' });
+
   return { resting: { oid, cloid } };
 }
 
@@ -261,6 +264,8 @@ async function restOrder(order: PaperOrder): Promise<void> {
   pipeline.sadd(KEYS.ORDERS_OPEN, order.oid.toString());
   pipeline.zadd(KEYS.USER_ORDERS(order.userId), order.createdAt, order.oid.toString());
   await pipeline.exec();
+
+  eventBus.emit('orderUpdate', { userId: order.userId, order, status: 'open' });
 }
 
 export async function cancelOrders(
@@ -281,11 +286,36 @@ export async function cancelOrders(
       continue;
     }
 
+    const now = Date.now();
     const pipeline = redis.pipeline();
-    pipeline.hset(KEYS.ORDER(cancel.o), 'status', 'cancelled', 'updatedAt', Date.now().toString());
+    pipeline.hset(KEYS.ORDER(cancel.o), 'status', 'cancelled', 'updatedAt', now.toString());
     pipeline.srem(KEYS.ORDERS_OPEN, cancel.o.toString());
     pipeline.srem(KEYS.ORDERS_TRIGGERS, cancel.o.toString());
     await pipeline.exec();
+
+    eventBus.emit('orderUpdate', {
+      userId,
+      order: {
+        oid: cancel.o,
+        coin: orderData.coin,
+        isBuy: orderData.isBuy === 'true',
+        sz: orderData.sz,
+        limitPx: orderData.limitPx,
+        status: 'cancelled',
+        asset: parseInt(orderData.asset, 10),
+        userId,
+        orderType: orderData.orderType,
+        tif: orderData.tif,
+        reduceOnly: orderData.reduceOnly === 'true',
+        grouping: orderData.grouping,
+        filledSz: orderData.filledSz ?? '0',
+        avgPx: orderData.avgPx ?? '0',
+        createdAt: parseInt(orderData.createdAt, 10),
+        updatedAt: now,
+        cloid: orderData.cloid || undefined,
+      } as PaperOrder,
+      status: 'cancelled',
+    });
 
     results.push('success');
   }
