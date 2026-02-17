@@ -13,7 +13,6 @@ export interface PaperPosition {
 
 export interface UserAccount {
   userId: string;
-  apiKey: string;
   balance: string;
   createdAt: number;
 }

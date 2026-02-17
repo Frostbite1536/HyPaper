@@ -30,7 +30,7 @@ HL WebSocket Feed ──> Worker Process ──> Redis (all hot state)
 ## Quick start
 
 ```bash
-git clone https://github.com/AquaToken/hypaper-backend.git
+git clone https://github.com/GigabrainGG/HyPaper.git
 cd hypaper-backend
 npm install
 docker compose up -d   # starts Redis

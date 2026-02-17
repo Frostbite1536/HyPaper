@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AquaToken/hypaper-backend.git"
+    "url": "https://github.com/GigabrainGG/HyPaper.git"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
