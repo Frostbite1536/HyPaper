@@ -5,6 +5,7 @@ import { lte, gte, isZero, gt, lt } from '../utils/math.js';
 import { nextOid } from '../utils/id.js';
 import { checkMarginForOrder } from './margin.js';
 import { OrderMatcher } from '../worker/order-matcher.js';
+import { computeFillPrice } from '../utils/slippage.js';
 import { eventBus } from '../worker/index.js';
 import type { HlOrderWire, HlCancelRequest, HlCancelByCloidRequest, HlOrderResponseStatus, HlMeta } from '../types/hl.js';
 import type { PaperOrder } from '../types/order.js';
@@ -92,9 +93,10 @@ async function placeSingleOrder(
     const order = buildOrder(oid, userId, wire.a, coin, isBuy, sz, limitPx, 'limit', tif, reduceOnly, grouping, wire.c, now);
 
     await saveOrder(order);
-    await matcher.executeFill(order, midPx);
+    const fillPx = await computeFillPrice(order, midPx);
+    await matcher.executeFill(order, fillPx);
 
-    return { filled: { totalSz: sz, avgPx: midPx, oid, cloid: wire.c } };
+    return { filled: { totalSz: sz, avgPx: fillPx, oid, cloid: wire.c } };
   }
 
   // ALO: reject if would immediately fill (post-only)
@@ -137,9 +139,10 @@ async function placeSingleOrder(
       const order = buildOrder(oid, userId, wire.a, coin, isBuy, sz, limitPx, 'limit', tif, reduceOnly, grouping, wire.c, now);
 
       await saveOrder(order);
-      await matcher.executeFill(order, midPx);
+      const fillPx = await computeFillPrice(order, midPx);
+      await matcher.executeFill(order, fillPx);
 
-      return { filled: { totalSz: sz, avgPx: midPx, oid, cloid: wire.c } };
+      return { filled: { totalSz: sz, avgPx: fillPx, oid, cloid: wire.c } };
     }
   }
 

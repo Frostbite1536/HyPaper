@@ -4,6 +4,7 @@ import { KEYS } from '../store/keys.js';
 import { logger } from '../utils/logger.js';
 import { D, sub, mul, add, isZero, gt, lt, gte, lte, abs, neg, min } from '../utils/math.js';
 import { nextTid } from '../utils/id.js';
+import { computeFillPrice } from '../utils/slippage.js';
 import type { PaperOrder, PaperFill } from '../types/order.js';
 
 export class OrderMatcher {
@@ -55,7 +56,8 @@ export class OrderMatcher {
         : gte(midPx, order.limitPx);
 
       if (shouldFill) {
-        await this.executeFill(order, order.limitPx);
+        const fillPx = await computeFillPrice(order, order.limitPx);
+        await this.executeFill(order, fillPx);
       }
     }
   }
@@ -83,8 +85,10 @@ export class OrderMatcher {
 
       const triggered = this.checkTrigger(order, midPx);
       if (triggered) {
-        // Fill at mid price for market trigger orders, or at trigger price for limit
-        const fillPx = order.isMarket ? midPx : order.limitPx;
+        // Fill at mid price for market trigger orders, or at limit price for limit
+        const basePx = order.isMarket ? midPx : order.limitPx;
+        const limitClamp = order.isMarket ? null : order.limitPx;
+        const fillPx = await computeFillPrice(order, basePx, limitClamp);
         await this.executeFill(order, fillPx);
         await redis.srem(KEYS.ORDERS_TRIGGERS, oidStr);
       }
