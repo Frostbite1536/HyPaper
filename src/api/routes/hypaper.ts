@@ -3,6 +3,7 @@ import { redis } from '../../store/redis.js';
 import { KEYS } from '../../store/keys.js';
 import { config } from '../../config.js';
 import { logger } from '../../utils/logger.js';
+import { upsertUser, updateUserBalance } from '../../store/pg-sink.js';
 
 export const hypaperRouter = new Hono();
 
@@ -50,6 +51,9 @@ hypaperRouter.post('/', async (c) => {
 
         await pipeline.exec();
 
+        // Fire-and-forget sync to Postgres
+        upsertUser(user, config.DEFAULT_BALANCE.toString());
+
         return c.json({ status: 'ok', message: 'Account reset' });
       }
 
@@ -59,6 +63,10 @@ hypaperRouter.post('/', async (c) => {
           return c.json({ error: 'Missing or invalid balance' }, 400);
         }
         await redis.hset(KEYS.USER_ACCOUNT(user), 'balance', balance.toString());
+
+        // Fire-and-forget sync to Postgres
+        updateUserBalance(user, balance.toString());
+
         return c.json({ status: 'ok', balance: balance.toString() });
       }
 

@@ -13,20 +13,27 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.8",
     "decimal.js": "^10.4.3",
+    "drizzle-orm": "^0.45.1",
     "hono": "^4.7.4",
     "ioredis": "^5.4.2",
     "pino": "^9.6.0",
+    "postgres": "^3.4.8",
     "ws": "^8.18.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
     "@types/ws": "^8.5.14",
+    "drizzle-kit": "^0.31.9",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"

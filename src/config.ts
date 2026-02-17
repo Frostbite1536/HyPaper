@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 const envSchema = z.object({
+  DATABASE_URL: z.string(),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   HL_WS_URL: z.string().default('wss://api.hyperliquid.xyz/ws'),
   HL_API_URL: z.string().default('https://api.hyperliquid.xyz'),

@@ -2,6 +2,8 @@ import { serve } from '@hono/node-server';
 import type { Server } from 'node:http';
 import { config } from './config.js';
 import { connectRedis, disconnectRedis } from './store/redis.js';
+import { connectDb, disconnectDb } from './store/db.js';
+import { startPgSink } from './store/pg-sink.js';
 import { Worker, eventBus } from './worker/index.js';
 import { app } from './api/server.js';
 import { logger } from './utils/logger.js';
@@ -17,9 +19,15 @@ async function main() {
   await connectRedis();
   logger.info('Redis connected');
 
+  // Connect to Postgres
+  await connectDb();
+
   // Start worker (fetches market data, connects WS)
   worker = new Worker();
   await worker.start();
+
+  // Attach Postgres sink (async event listeners)
+  startPgSink(eventBus);
 
   // Start HTTP server
   const httpServer = serve({
@@ -37,6 +45,7 @@ async function shutdown() {
   logger.info('Shutting down...');
   wsServer?.close();
   worker?.stop();
+  await disconnectDb();
   await disconnectRedis();
   process.exit(0);
 }
