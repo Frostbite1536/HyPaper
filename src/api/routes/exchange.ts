@@ -1,13 +1,20 @@
 import { Hono } from 'hono';
 import { placeOrders, cancelOrders, cancelByCloid, updateLeverage } from '../../engine/order.js';
+import { ensureAccount } from '../middleware/auth.js';
 import { logger } from '../../utils/logger.js';
 import type { HlExchangeAction } from '../../types/hl.js';
 
 export const exchangeRouter = new Hono();
 
 exchangeRouter.post('/', async (c) => {
-  const userId = c.get('userId');
   const body = await c.req.json();
+
+  const wallet: string | undefined = body.wallet;
+  if (!wallet || typeof wallet !== 'string') {
+    return c.json({ status: 'err', response: 'Missing wallet address' }, 400);
+  }
+
+  await ensureAccount(wallet);
 
   const action: HlExchangeAction = body.action;
   if (!action || typeof action !== 'object' || !action.type) {
@@ -34,7 +41,7 @@ exchangeRouter.post('/', async (c) => {
           }
         }
 
-        const statuses = await placeOrders(userId, action.orders, action.grouping);
+        const statuses = await placeOrders(wallet, action.orders, action.grouping);
         return c.json({
           status: 'ok',
           response: {
@@ -54,7 +61,7 @@ exchangeRouter.post('/', async (c) => {
           }
         }
 
-        const statuses = await cancelOrders(userId, action.cancels);
+        const statuses = await cancelOrders(wallet, action.cancels);
         return c.json({
           status: 'ok',
           response: {
@@ -74,7 +81,7 @@ exchangeRouter.post('/', async (c) => {
           }
         }
 
-        const statuses = await cancelByCloid(userId, action.cancels);
+        const statuses = await cancelByCloid(wallet, action.cancels);
         return c.json({
           status: 'ok',
           response: {
@@ -92,7 +99,7 @@ exchangeRouter.post('/', async (c) => {
           return c.json({ status: 'err', response: 'Leverage must be between 1 and 200' }, 400);
         }
 
-        await updateLeverage(userId, action.asset, action.isCross, action.leverage);
+        await updateLeverage(wallet, action.asset, action.isCross, action.leverage);
         return c.json({
           status: 'ok',
           response: { type: 'default' },

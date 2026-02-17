@@ -17,7 +17,7 @@ setInterval(() => {
 }, 60_000).unref();
 
 export const rateLimitMiddleware = createMiddleware(async (c, next) => {
-  const key = c.get('userId') ?? c.req.header('x-forwarded-for') ?? 'anon';
+  const key = c.req.header('x-forwarded-for') ?? 'anon';
   const now = Date.now();
 
   let bucket = buckets.get(key);

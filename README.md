@@ -1,78 +1,74 @@
 # HyPaper
 
-Open-source paper trading backend for [HyperLiquid](https://hyperliquid.xyz). Swap `api.hyperliquid.xyz` → `api.hypaper.xyz` in your existing HL bot and it just works — same request/response shapes, but wallet signing is replaced with API key auth.
+Open-source paper trading backend for [HyperLiquid](https://hyperliquid.xyz). Swap `api.hyperliquid.xyz` for your HyPaper URL in your existing HL bot and it just works — same request/response shapes, same WebSocket protocol, no wallet signing required.
 
 ## How it works
 
 ```
-HL WebSocket Feed ──▶ Worker Process ──▶ Redis (all hot state)
-                      - price updates        │
-                      - order matching        │ reads
-                      - fill execution        ▼
-                                         Hono API Server
-                                         POST /exchange
-                                         POST /info
-                                         POST /hypaper
+HL WebSocket Feed ──> Worker Process ──> Redis (all hot state)
+                       - price updates        |
+                       - order matching        | reads
+                       - fill execution        v
+                                          Hono API Server
+                                          POST /exchange
+                                          POST /info
+                                          POST /hypaper
+                                               |
+                       EventBus <──────────────+
+                         |
+                         v
+                    WebSocket Server (/ws)
+                    - allMids, l2Book
+                    - orderUpdates, userFills
 ```
 
 - **Worker** streams live market data from HyperLiquid via WebSocket and fills paper orders on every price tick
 - **Redis** holds all state: prices, positions, orders, fills, balances
-- **API** mirrors HL's endpoints so existing bots need zero code changes
+- **API** mirrors HL's endpoints so existing bots need minimal code changes
+- **WebSocket** pushes real-time updates to connected clients using HL's subscribe/unsubscribe protocol
 
 ## Quick start
 
 ```bash
-git clone https://github.com/your-org/hypaper-backend.git
+git clone https://github.com/AquaToken/hypaper-backend.git
 cd hypaper-backend
 npm install
 docker compose up -d   # starts Redis
 npm run dev            # starts server with hot reload
 ```
 
-Server runs on `http://localhost:3000`.
+Server runs on `http://localhost:3000`. WebSocket at `ws://localhost:3000/ws`.
 
 ## Configuration
 
 Copy `.env.example` to `.env` and edit as needed:
 
 ```env
-# Redis — supports redis:// and rediss:// (TLS) for cloud providers
 REDIS_URL=redis://localhost:6379
-
-# HyperLiquid endpoints
 HL_WS_URL=wss://api.hyperliquid.xyz/ws
 HL_API_URL=https://api.hyperliquid.xyz
-
-# Server
 PORT=3000
-
-# Paper trading
-DEFAULT_BALANCE=10000000
-
-# Logging: fatal, error, warn, info, debug, trace
+DEFAULT_BALANCE=100000
 LOG_LEVEL=info
-
-# WebSocket reconnect tuning (ms)
-WS_RECONNECT_MIN_MS=1000
-WS_RECONNECT_MAX_MS=30000
 ```
 
 Bring your own Redis — any Redis 7+ works (local, Docker, Upstash, Redis Cloud, etc.).
 
 ## Authentication
 
-HyPaper replaces HL's wallet signing with API keys:
+HyPaper has **no authentication**. This mirrors HL's public info API and simplifies integration.
 
-- **With key:** Send `X-API-Key: hp_xxxxx` header
-- **Without key:** Auto-creates an account and returns the key in `X-API-Key` response header
+- `/info` is fully public. User-specific queries pass `user` (wallet address) in the request body, just like HL.
+- `/exchange` requires a `wallet` field in the request body to identify the user. Accounts are auto-created on first use with the configured default balance.
+- `/hypaper` uses `user` in the request body.
 
-Request bodies still accept `action`, `nonce`, `signature` fields like HL — `nonce`/`signature`/`vaultAddress` are simply ignored.
+Any string works as a wallet address — use your real `0x...` address, a test address, or any identifier you like.
 
 ## API reference
 
 ### `GET /health`
 
-Health check. No auth required.
+Health check.
 
 ### `POST /info`
 
@@ -80,16 +76,16 @@ Mirrors [HL's info endpoint](https://hyperliquid.gitbook.io/hyperliquid-docs/for
 
 **Served from Redis (paper state):**
 
-| type | description |
-|------|-------------|
-| `allMids` | Mid prices for all assets |
-| `clearinghouseState` | Positions, margin summary, account value |
-| `openOrders` | Open orders for the authenticated user |
-| `frontendOpenOrders` | Open orders with extra fields (tif, trigger, etc.) |
-| `userFills` | Recent fills |
-| `userFillsByTime` | Fills filtered by `startTime`/`endTime` |
-| `orderStatus` | Status of a specific order by `oid` |
-| `activeAssetCtx` | Asset context (funding, OI, mark price) by `coin` |
+| type | body | description |
+|------|------|-------------|
+| `allMids` | — | Mid prices for all assets |
+| `clearinghouseState` | `{"user": "0x..."}` | Positions, margin summary, account value |
+| `openOrders` | `{"user": "0x..."}` | Open orders |
+| `frontendOpenOrders` | `{"user": "0x..."}` | Open orders with extra fields (tif, trigger, etc.) |
+| `userFills` | `{"user": "0x..."}` | Recent fills |
+| `userFillsByTime` | `{"user": "0x...", "startTime": ..., "endTime": ...}` | Fills filtered by time |
+| `orderStatus` | `{"oid": 123}` | Status of a specific order |
+| `activeAssetCtx` | `{"coin": "BTC"}` | Asset context (funding, OI, mark price) |
 
 **Proxied to real HL (live market data):**
 
@@ -105,7 +101,7 @@ Any unrecognized type is also proxied to HL.
 
 ### `POST /exchange`
 
-Mirrors [HL's exchange endpoint](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint). Send `{"action": {...}}` in the body.
+Mirrors [HL's exchange endpoint](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint). Send `{"wallet": "0x...", "action": {...}}` in the body.
 
 | action.type | description |
 |-------------|-------------|
@@ -118,9 +114,9 @@ Mirrors [HL's exchange endpoint](https://hyperliquid.gitbook.io/hyperliquid-docs
 
 ```bash
 curl -s http://localhost:3000/exchange \
-  -H "X-API-Key: $API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
+    "wallet": "0xYourAddress",
     "action": {
       "type": "order",
       "grouping": "na",
@@ -136,34 +132,66 @@ curl -s http://localhost:3000/exchange \
 
 ```bash
 curl -s http://localhost:3000/exchange \
-  -H "X-API-Key: $API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"action": {"type": "cancel", "cancels": [{"a": 0, "o": 1}]}}'
+  -d '{
+    "wallet": "0xYourAddress",
+    "action": {"type": "cancel", "cancels": [{"a": 0, "o": 1}]}
+  }'
 ```
 
 ### `POST /hypaper`
 
-Paper-trading-specific endpoints. Send `{"type": "..."}` in the body.
+Paper-trading-specific endpoints (not part of HL's API).
 
 | type | body | description |
 |------|------|-------------|
-| `resetAccount` | — | Wipe all positions, orders, fills. Reset balance to default. |
-| `setBalance` | `{"balance": 5000000}` | Set account balance to a specific value |
-| `getAccountInfo` | — | Get userId, balance, creation time |
+| `resetAccount` | `{"user": "0x..."}` | Wipe all positions, orders, fills. Reset balance. |
+| `setBalance` | `{"user": "0x...", "balance": 500000}` | Set account balance |
+| `getAccountInfo` | `{"user": "0x..."}` | Get userId, balance, creation time |
+
+### `WebSocket /ws`
+
+Mirrors [HL's WebSocket API](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket). Connect to `ws://localhost:3000/ws`.
+
+**Subscribe to channels:**
+
+```json
+{"method": "subscribe", "subscription": {"type": "allMids"}}
+{"method": "subscribe", "subscription": {"type": "l2Book", "coin": "BTC"}}
+{"method": "subscribe", "subscription": {"type": "orderUpdates", "user": "0x..."}}
+{"method": "subscribe", "subscription": {"type": "userFills", "user": "0x..."}}
+```
+
+**Unsubscribe:**
+
+```json
+{"method": "unsubscribe", "subscription": {"type": "allMids"}}
+```
+
+**Server pushes:**
+
+```json
+{"channel": "allMids", "data": {"mids": {"BTC": "42500", ...}}}
+{"channel": "l2Book", "data": {"coin": "BTC", "levels": [...], "time": ...}}
+{"channel": "orderUpdates", "data": [{"order": {...}, "status": "filled", ...}]}
+{"channel": "userFills", "data": {"isSnapshot": false, "user": "0x...", "fills": [...]}}
+```
+
+All channels are open — no authentication required.
 
 ## Using with existing HL bots
 
-Point your bot's base URL at HyPaper:
+Point your bot's base URL at HyPaper and pass the wallet address:
 
 ```python
-# Before
+# Before (real HL — uses wallet signing)
 exchange = HyperliquidExchange(base_url="https://api.hyperliquid.xyz")
 
-# After
+# After (HyPaper — pass wallet in body)
 exchange = HyperliquidExchange(base_url="http://localhost:3000")
 ```
 
-Add the API key header however your SDK allows. If your SDK sends `nonce`/`signature`, that's fine — HyPaper ignores them.
+If your SDK sends `nonce`/`signature`/`vaultAddress`, that's fine — HyPaper ignores them. You only need to add a `wallet` field to `/exchange` requests.
 
 ## Order matching
 
@@ -182,12 +210,40 @@ Time-in-force behavior:
 - **IOC** — fills immediately or rejects
 - **ALO** — rejects if it would fill immediately (post-only)
 
+## Deployment
+
+### Docker Compose (simplest)
+
+```bash
+docker compose --profile prod up -d
+```
+
+### Any Docker host
+
+The Dockerfile produces a production image. Provide `REDIS_URL` and you're set:
+
+```bash
+docker build -t hypaper .
+docker run -p 3000:3000 -e REDIS_URL=redis://your-redis:6379 hypaper
+```
+
+### Platform recommendations
+
+| Platform | Notes |
+|----------|-------|
+| **Railway** | Managed Redis add-on, WebSocket support, auto-detects Dockerfile |
+| **Fly.io** | Native WS support, Upstash Redis add-on |
+| **VPS (Hetzner, DO)** | `docker compose --profile prod up -d`, full control |
+
+WebSocket support is required — platforms like Vercel/Cloudflare Workers won't work.
+
 ## Project structure
 
 ```
 src/
 ├── api/
-│   ├── middleware/auth.ts   # API key auth + auto-session
+│   ├── middleware/auth.ts   # Auto-create accounts on first use
+│   ├── middleware/rate-limit.ts
 │   ├── routes/exchange.ts   # POST /exchange
 │   ├── routes/info.ts       # POST /info
 │   ├── routes/hypaper.ts    # POST /hypaper
@@ -205,14 +261,17 @@ src/
 │   ├── order.ts             # Internal order types
 │   └── position.ts          # Internal position types
 ├── utils/
-│   ├── id.ts                # API key + ID generation
+│   ├── id.ts                # Sequence ID generation
 │   ├── logger.ts            # Pino logger
 │   └── math.ts              # decimal.js wrappers
 ├── worker/
-│   ├── index.ts             # Worker startup + market data seeding
+│   ├── index.ts             # Worker startup, eventBus, market data seeding
 │   ├── order-matcher.ts     # Core matching engine
-│   ├── price-updater.ts     # WS message → Redis
+│   ├── price-updater.ts     # WS message → Redis + eventBus
 │   └── ws-client.ts         # HL WebSocket with reconnect
+├── ws/
+│   ├── server.ts            # Outbound WebSocket server (/ws)
+│   └── types.ts             # WS message + event bus types
 ├── config.ts                # Zod-validated env config
 └── index.ts                 # Entry point
 ```
@@ -221,10 +280,15 @@ src/
 
 - **Runtime:** Node.js + TypeScript
 - **HTTP:** [Hono](https://hono.dev) + @hono/node-server
+- **WebSocket:** [ws](https://github.com/websockets/ws)
 - **State:** [Redis](https://redis.io) via ioredis
 - **Math:** [decimal.js](https://github.com/MikeMcl/decimal.js) (no floating point)
 - **Validation:** zod
 - **Logging:** pino
+
+## Contributing
+
+Contributions welcome. Please open an issue first for large changes.
 
 ## License
 

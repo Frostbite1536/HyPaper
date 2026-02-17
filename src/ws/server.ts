@@ -6,7 +6,6 @@ import { logger } from '../utils/logger.js';
 import type { IncomingMessage } from 'node:http';
 import type { Server } from 'node:http';
 import type {
-  WsInboundMessage,
   WsSubscription,
   MidsEvent,
   L2BookEvent,
@@ -16,7 +15,6 @@ import type {
 
 interface ClientState {
   ws: WebSocket;
-  userId: string | null;
   subscriptions: Set<string>;
   isAlive: boolean;
 }
@@ -47,8 +45,8 @@ export class HyPaperWsServer {
       });
     });
 
-    this.wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-      this.handleConnection(ws, req);
+    this.wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => {
+      this.handleConnection(ws);
     });
 
     this.setupEventListeners();
@@ -57,24 +55,13 @@ export class HyPaperWsServer {
     logger.info('WebSocket server attached at /ws');
   }
 
-  private async handleConnection(ws: WebSocket, req: IncomingMessage): Promise<void> {
+  private handleConnection(ws: WebSocket): void {
     const state: ClientState = {
       ws,
-      userId: null,
       subscriptions: new Set(),
       isAlive: true,
     };
     this.clients.set(ws, state);
-
-    // Auth via query param
-    const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
-    const apiKey = url.searchParams.get('apiKey');
-    if (apiKey) {
-      const userId = await redis.hget(KEYS.AUTH_APIKEYS, apiKey);
-      if (userId) {
-        state.userId = userId;
-      }
-    }
 
     ws.on('pong', () => {
       state.isAlive = true;
@@ -95,7 +82,7 @@ export class HyPaperWsServer {
   }
 
   private async handleMessage(state: ClientState, raw: Buffer): Promise<void> {
-    let msg: WsInboundMessage;
+    let msg: { method?: string; subscription?: WsSubscription };
     try {
       msg = JSON.parse(raw.toString());
     } catch {
@@ -104,28 +91,17 @@ export class HyPaperWsServer {
     }
 
     switch (msg.method) {
-      case 'auth':
-        await this.handleAuth(state, msg.apiKey);
-        break;
       case 'subscribe':
-        await this.handleSubscribe(state, msg.subscription);
+        if (msg.subscription) await this.handleSubscribe(state, msg.subscription);
+        else this.send(state.ws, { error: 'Missing subscription' });
         break;
       case 'unsubscribe':
-        this.handleUnsubscribe(state, msg.subscription);
+        if (msg.subscription) this.handleUnsubscribe(state, msg.subscription);
+        else this.send(state.ws, { error: 'Missing subscription' });
         break;
       default:
-        this.send(state.ws, { error: `Unknown method: ${(msg as any).method}` });
+        this.send(state.ws, { error: `Unknown method: ${msg.method}` });
     }
-  }
-
-  private async handleAuth(state: ClientState, apiKey: string): Promise<void> {
-    const userId = await redis.hget(KEYS.AUTH_APIKEYS, apiKey);
-    if (!userId) {
-      this.send(state.ws, { error: 'Invalid API key' });
-      return;
-    }
-    state.userId = userId;
-    this.send(state.ws, { channel: 'auth', data: { authenticated: true } });
   }
 
   private async handleSubscribe(state: ClientState, sub: WsSubscription): Promise<void> {
@@ -133,18 +109,6 @@ export class HyPaperWsServer {
     if (!key) {
       this.send(state.ws, { error: 'Invalid subscription' });
       return;
-    }
-
-    // User channels require auth
-    if (sub.type === 'orderUpdates' || sub.type === 'userFills') {
-      if (!state.userId) {
-        this.send(state.ws, { error: 'Authentication required for user channels' });
-        return;
-      }
-      if (sub.user !== state.userId) {
-        this.send(state.ws, { error: 'Can only subscribe to own user data' });
-        return;
-      }
     }
 
     state.subscriptions.add(key);

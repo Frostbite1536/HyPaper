@@ -5,9 +5,6 @@ export const KEYS = {
   MARKET_L2: (coin: string) => `market:l2:${coin}`,
   MARKET_META: 'market:meta',
 
-  // Auth
-  AUTH_APIKEYS: 'auth:apikeys',
-
   // User account
   USER_ACCOUNT: (userId: string) => `user:${userId}:account`,
   USER_POSITIONS: (userId: string) => `user:${userId}:positions`,

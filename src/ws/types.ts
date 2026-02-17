@@ -12,12 +12,7 @@ export interface WsUnsubscribeMessage {
   subscription: WsSubscription;
 }
 
-export interface WsAuthMessage {
-  method: 'auth';
-  apiKey: string;
-}
-
-export type WsInboundMessage = WsSubscribeMessage | WsUnsubscribeMessage | WsAuthMessage;
+export type WsInboundMessage = WsSubscribeMessage | WsUnsubscribeMessage;
 
 export type WsSubscription =
   | { type: 'allMids' }

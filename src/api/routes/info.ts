@@ -37,9 +37,9 @@ function getCacheKey(body: Record<string, unknown>): string {
 const PROXIED_TYPES = new Set(Object.keys(PROXY_TTL));
 
 infoRouter.post('/', async (c) => {
-  const userId = c.get('userId');
   const body = await c.req.json();
   const type: string = body.type;
+  const user: string | undefined = body.user;
 
   if (!type) {
     return c.json({ error: 'Missing type' }, 400);
@@ -59,28 +59,33 @@ infoRouter.post('/', async (c) => {
       }
 
       case 'clearinghouseState': {
-        const state = await getClearinghouseState(userId);
+        if (!user) return c.json({ error: 'Missing user' }, 400);
+        const state = await getClearinghouseState(user);
         return c.json(state);
       }
 
       case 'openOrders': {
-        const orders = await getOpenOrders(userId);
+        if (!user) return c.json({ error: 'Missing user' }, 400);
+        const orders = await getOpenOrders(user);
         return c.json(orders);
       }
 
       case 'frontendOpenOrders': {
-        const orders = await getFrontendOpenOrders(userId);
+        if (!user) return c.json({ error: 'Missing user' }, 400);
+        const orders = await getFrontendOpenOrders(user);
         return c.json(orders);
       }
 
       case 'userFills': {
-        const fills = await getUserFills(userId);
+        if (!user) return c.json({ error: 'Missing user' }, 400);
+        const fills = await getUserFills(user);
         return c.json(fills);
       }
 
       case 'userFillsByTime': {
+        if (!user) return c.json({ error: 'Missing user' }, 400);
         const fills = await getUserFillsByTime(
-          userId,
+          user,
           body.startTime ?? 0,
           body.endTime,
         );

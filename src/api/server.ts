@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { authMiddleware } from './middleware/auth.js';
 import { rateLimitMiddleware } from './middleware/rate-limit.js';
 import { exchangeRouter } from './routes/exchange.js';
 import { infoRouter } from './routes/info.js';
@@ -21,7 +20,7 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal server error' }, 500);
 });
 
-// Health check (no auth required)
+// Health check
 app.get('/health', (c) => c.json({ status: 'ok', time: Date.now() }));
 
 // Helpful response for wrong method
@@ -30,10 +29,7 @@ app.get('/info', (c) => c.json(postOnlyMsg, 405));
 app.get('/exchange', (c) => c.json(postOnlyMsg, 405));
 app.get('/hypaper', (c) => c.json(postOnlyMsg, 405));
 
-// Auth + rate limiting for API routes
-app.use('/exchange', authMiddleware);
-app.use('/info', authMiddleware);
-app.use('/hypaper', authMiddleware);
+// Rate limiting for API routes
 app.use('/exchange', rateLimitMiddleware);
 app.use('/info', rateLimitMiddleware);
 app.use('/hypaper', rateLimitMiddleware);
