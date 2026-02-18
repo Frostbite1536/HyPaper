@@ -5,6 +5,7 @@ import { config } from '../../config.js';
 import { getClearinghouseState, getOpenOrders, getFrontendOpenOrders, getOrderStatus } from '../../engine/position.js';
 import { getUserFills, getUserFillsByTime } from '../../engine/fill.js';
 import { logger } from '../../utils/logger.js';
+import { ensureAccount } from '../middleware/auth.js';
 
 export const infoRouter = new Hono();
 
@@ -39,7 +40,7 @@ const PROXIED_TYPES = new Set(Object.keys(PROXY_TTL));
 infoRouter.post('/', async (c) => {
   const body = await c.req.json();
   const type: string = body.type;
-  const user: string | undefined = body.user;
+  const user: string | undefined = body.user?.toLowerCase();
 
   if (!type) {
     return c.json({ error: 'Missing type' }, 400);
@@ -49,6 +50,11 @@ infoRouter.post('/', async (c) => {
     // Check if we should proxy to real HL
     if (PROXIED_TYPES.has(type)) {
       return cachedProxyToHL(c, body);
+    }
+
+    // For user-specific queries, ensure account exists
+    if (user) {
+      await ensureAccount(user);
     }
 
     // Handle locally from Redis

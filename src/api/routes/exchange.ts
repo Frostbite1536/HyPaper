@@ -9,10 +9,11 @@ export const exchangeRouter = new Hono();
 exchangeRouter.post('/', async (c) => {
   const body = await c.req.json();
 
-  const wallet: string | undefined = body.wallet;
-  if (!wallet || typeof wallet !== 'string') {
+  const rawWallet: string | undefined = body.wallet;
+  if (!rawWallet || typeof rawWallet !== 'string') {
     return c.json({ status: 'err', response: 'Missing wallet address' }, 400);
   }
+  const wallet = rawWallet.toLowerCase();
 
   await ensureAccount(wallet);
 
