@@ -67,17 +67,19 @@ export class Worker {
       const ctxData = await ctxRes.json() as [HlMeta, HlAssetCtx[]];
       const assetCtxs = ctxData[1];
 
-      // Build initial mids from mark prices
+      // Build initial mids from the best live price available.
       const mids: Record<string, string> = {};
       for (let i = 0; i < meta.universe.length && i < assetCtxs.length; i++) {
         const coin = meta.universe[i].name;
         const ctx = assetCtxs[i];
-        if (ctx.markPx) {
-          mids[coin] = ctx.markPx;
+        const livePx = ctx.midPx ?? ctx.markPx;
+        if (livePx) {
+          mids[coin] = livePx;
         }
         // Store asset context
         await redis.hset(KEYS.MARKET_CTX(coin),
           'markPx', ctx.markPx ?? '',
+          'midPx', ctx.midPx ?? '',
           'oraclePx', ctx.oraclePx ?? '',
           'funding', ctx.funding ?? '',
           'openInterest', ctx.openInterest ?? '',

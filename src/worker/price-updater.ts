@@ -52,8 +52,10 @@ export class PriceUpdater {
     if (!data.coin || !data.ctx) return;
 
     const ctx = data.ctx;
-    await redis.hset(KEYS.MARKET_CTX(data.coin),
+    const pipeline = redis.pipeline();
+    pipeline.hset(KEYS.MARKET_CTX(data.coin),
       'markPx', ctx.markPx ?? '',
+      'midPx', ctx.midPx ?? '',
       'oraclePx', ctx.oraclePx ?? '',
       'funding', ctx.funding ?? '',
       'openInterest', ctx.openInterest ?? '',
@@ -61,6 +63,18 @@ export class PriceUpdater {
       'dayNtlVlm', ctx.dayNtlVlm ?? '',
       'premium', ctx.premium ?? '',
     );
+
+    const livePx = ctx.midPx ?? ctx.markPx;
+    if (livePx) {
+      pipeline.hset(KEYS.MARKET_MIDS, data.coin, livePx);
+    }
+
+    await pipeline.exec();
+
+    if (livePx) {
+      this.eventBus.emit('mids', { mids: { [data.coin]: livePx } });
+      this.onUpdate();
+    }
   }
 
   private async handleL2Book(data: HlL2Book): Promise<void> {
