@@ -183,7 +183,7 @@ Response: [{
   "time": 1705000000000, "startPosition": "0",
   "dir": "Open Long",
   "closedPnl": "0", "hash": "0x...", "oid": 123,
-  "crossed": true, "fee": "0", "tid": 1000, "feeToken": "USDC"
+  "crossed": true, "fee": "17.5", "tid": 1000, "feeToken": "USDC"
 }]
 ```
 

@@ -51,6 +51,11 @@ HL_API_URL=https://api.hyperliquid.xyz
 PORT=3000
 DEFAULT_BALANCE=100000
 LOG_LEVEL=info
+FEES_ENABLED=true
+FEE_RATE_TAKER=0.00035
+FEE_RATE_MAKER=0.0001
+FUNDING_ENABLED=true
+FUNDING_INTERVAL_MS=28800000
 ```
 
 Bring your own Redis — any Redis 7+ works (local, Docker, Upstash, Redis Cloud, etc.).
@@ -234,6 +239,22 @@ Time-in-force behavior:
 - **IOC** — fills immediately or rejects
 - **ALO** — rejects if it would fill immediately (post-only)
 
+## Fees & Funding
+
+**Maker/Taker fees** are enabled by default and match HyperLiquid's fee schedule:
+
+- **Taker** (IOC, GTC immediate fill, triggers): 3.5 bps (`0.00035`)
+- **Maker** (rested limit orders filled by price movement): 1 bp (`0.0001`)
+- `crossed: true` in fills indicates a taker fill, `false` for maker
+- Disable with `FEES_ENABLED=false`
+
+**Funding rates** are applied every 8 hours (matching HL's schedule):
+
+- Funding rates are sourced from live HyperLiquid market data
+- Longs pay when the funding rate is positive, shorts receive
+- Tracked per-position via `cumFunding`, `cumFundingSinceOpen`, `cumFundingSinceChange`
+- Disable with `FUNDING_ENABLED=false`
+
 ## Deployment
 
 ### Docker Compose (simplest)
@@ -290,6 +311,7 @@ src/
 │   └── math.ts              # decimal.js wrappers
 ├── worker/
 │   ├── index.ts             # Worker startup, eventBus, market data seeding
+│   ├── funding-worker.ts    # Periodic funding fee application
 │   ├── order-matcher.ts     # Core matching engine
 │   ├── price-updater.ts     # WS message → Redis + eventBus
 │   └── ws-client.ts         # HL WebSocket with reconnect

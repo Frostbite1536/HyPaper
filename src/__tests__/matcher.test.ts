@@ -10,6 +10,16 @@ vi.mock('../store/redis.js', () => ({
   redis: redisMock,
 }));
 
+// Mock config with fees disabled for existing tests (fee tests are separate)
+vi.mock('../config.js', () => ({
+  config: {
+    FEES_ENABLED: false,
+    FEE_RATE_TAKER: '0.00035',
+    FEE_RATE_MAKER: '0.0001',
+    LOG_LEVEL: 'silent',
+  },
+}));
+
 // Mock L2 cache to return null (falls back to mid price)
 vi.mock('../utils/l2-cache.js', () => ({
   getL2Book: vi.fn().mockResolvedValue(null),
@@ -612,8 +622,8 @@ describe('OrderMatcher', () => {
       expect(fill.sz).toBe('0.5');
       expect(fill.side).toBe('B');
       expect(fill.oid).toBe(1);
-      expect(fill.crossed).toBe(true);
-      expect(fill.fee).toBe('0');
+      expect(fill.crossed).toBe(false); // rested orders matched via matchAll are maker
+      expect(fill.fee).toBe('0'); // fees disabled in test config
       expect(fill.feeToken).toBe('USDC');
       expect(fill.startPosition).toBe('0');
       expect(fill.hash).toMatch(/^0x/);

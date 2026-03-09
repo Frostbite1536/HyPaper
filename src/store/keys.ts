@@ -20,6 +20,9 @@ export const KEYS = {
   ORDERS_OPEN: 'orders:open',
   ORDERS_TRIGGERS: 'orders:triggers',
 
+  // Active users (for funding)
+  USERS_ACTIVE: 'users:active',
+
   // Sequences
   SEQ_OID: 'seq:oid',
   SEQ_TID: 'seq:tid',

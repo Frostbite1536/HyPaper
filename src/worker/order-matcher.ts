@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
+import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { D, sub, mul, add, isZero, gt, lt, gte, lte, abs, neg, min } from '../utils/math.js';
 import { nextTid } from '../utils/id.js';
@@ -57,7 +58,7 @@ export class OrderMatcher {
 
       if (shouldFill) {
         const fillPx = await computeFillPrice(order, order.limitPx);
-        await this.executeFill(order, fillPx);
+        await this.executeFill(order, fillPx, false); // rested orders are maker
       }
     }
   }
@@ -89,7 +90,7 @@ export class OrderMatcher {
         const basePx = order.isMarket ? midPx : order.limitPx;
         const limitClamp = order.isMarket ? null : order.limitPx;
         const fillPx = await computeFillPrice(order, basePx, limitClamp);
-        await this.executeFill(order, fillPx);
+        await this.executeFill(order, fillPx, true); // trigger fills are taker
         await redis.srem(KEYS.ORDERS_TRIGGERS, oidStr);
       }
     }
@@ -110,7 +111,7 @@ export class OrderMatcher {
     }
   }
 
-  async executeFill(order: PaperOrder, fillPx: string): Promise<void> {
+  async executeFill(order: PaperOrder, fillPx: string, isTaker: boolean = true): Promise<void> {
     const userId = order.userId;
     const asset = order.asset;
     const fillSz = sub(order.sz, order.filledSz);
@@ -137,11 +138,11 @@ export class OrderMatcher {
       const posAbs = abs(currentSzi);
       if (gt(fillSz, posAbs)) {
         // Reduce fill to exactly close the position
-        return this.executeFillWithSize(order, fillPx, posAbs, currentSzi, currentEntryPx);
+        return this.executeFillWithSize(order, fillPx, posAbs, currentSzi, currentEntryPx, isTaker);
       }
     }
 
-    await this.executeFillWithSize(order, fillPx, fillSz, currentSzi, currentEntryPx);
+    await this.executeFillWithSize(order, fillPx, fillSz, currentSzi, currentEntryPx, isTaker);
   }
 
   private async executeFillWithSize(
@@ -150,6 +151,7 @@ export class OrderMatcher {
     fillSz: string,
     currentSzi: string,
     currentEntryPx: string,
+    isTaker: boolean = true,
   ): Promise<void> {
     const userId = order.userId;
     const asset = order.asset;
@@ -202,6 +204,12 @@ export class OrderMatcher {
     // Determine fill direction string
     const dir = this.getFillDir(currentSzi, signedFillSz);
 
+    // Calculate fee
+    const feeRate = config.FEES_ENABLED
+      ? (isTaker ? config.FEE_RATE_TAKER : config.FEE_RATE_MAKER)
+      : '0';
+    const fee = mul(mul(fillSz, fillPx), feeRate);
+
     const fill: PaperFill = {
       coin: order.coin,
       px: fillPx,
@@ -213,8 +221,8 @@ export class OrderMatcher {
       closedPnl,
       hash: `0x${tid.toString(16).padStart(64, '0')}`,
       oid: order.oid,
-      crossed: true,
-      fee: '0',
+      crossed: isTaker,
+      fee,
       tid,
       cloid: order.cloid,
       feeToken: 'USDC',
@@ -253,9 +261,17 @@ export class OrderMatcher {
       pipeline.sadd(KEYS.USER_POSITIONS(userId), asset.toString());
     }
 
+    // Track active user for funding
+    pipeline.sadd(KEYS.USERS_ACTIVE, userId);
+
     // Credit closed PnL to balance
     if (!isZero(closedPnl)) {
       pipeline.hincrbyfloat(KEYS.USER_ACCOUNT(userId), 'balance', closedPnl);
+    }
+
+    // Deduct fee from balance
+    if (!isZero(fee)) {
+      pipeline.hincrbyfloat(KEYS.USER_ACCOUNT(userId), 'balance', neg(fee));
     }
 
     // Mark order as filled

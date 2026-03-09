@@ -6,6 +6,7 @@ import { logger } from '../utils/logger.js';
 import { HlWebSocketClient } from './ws-client.js';
 import { PriceUpdater } from './price-updater.js';
 import { OrderMatcher } from './order-matcher.js';
+import { FundingWorker } from './funding-worker.js';
 import type { HlMeta, HlAssetCtx } from '../types/hl.js';
 
 export const eventBus = new EventEmitter();
@@ -14,9 +15,11 @@ export class Worker {
   private wsClient: HlWebSocketClient | null = null;
   private priceUpdater: PriceUpdater;
   private orderMatcher: OrderMatcher;
+  private fundingWorker: FundingWorker;
 
   constructor() {
     this.orderMatcher = new OrderMatcher(eventBus);
+    this.fundingWorker = new FundingWorker();
     this.priceUpdater = new PriceUpdater(() => {
       // Fire-and-forget match on every price update
       this.orderMatcher.matchAll();
@@ -37,6 +40,8 @@ export class Worker {
     this.wsClient!.connect();
     this.wsClient!.subscribe({ type: 'allMids' });
     this.wsClient!.subscribe({ type: 'activeAssetCtx' });
+
+    this.fundingWorker.start();
 
     logger.info('Worker started');
   }
@@ -99,6 +104,7 @@ export class Worker {
   }
 
   stop(): void {
+    this.fundingWorker.stop();
     this.wsClient?.close();
     logger.info('Worker stopped');
   }

@@ -36,6 +36,8 @@ Paper trading backend for HyperLiquid. Fake money, real prices, same wire format
 
 - **Order matching** runs on every price tick from HyperLiquid
 - **Fill price** is VWAP from real L2 order book, clamped to limit price
+- **Fees**: Taker 3.5 bps, Maker 1 bp (enabled by default, matches HL). `crossed: true` = taker
+- **Funding**: Applied every 8h from live HL rates. Longs pay positive rates, shorts receive
 - **Margin**: `marginNeeded = (size * price) / leverage`, default 20x cross
 - **TIF**: `Gtc` (rests on book), `Ioc` (fill or reject), `Alo` (post-only)
 - **Position flipping**: excess size becomes opposite direction at fill price

@@ -19,6 +19,11 @@ const envSchema = z.object({
   WS_RECONNECT_MAX_MS: z.coerce.number().default(30000),
   RATE_LIMIT_MAX: z.coerce.number().default(120),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
+  FEES_ENABLED: z.coerce.boolean().default(true),
+  FEE_RATE_TAKER: z.string().default('0.00035'),
+  FEE_RATE_MAKER: z.string().default('0.0001'),
+  FUNDING_ENABLED: z.coerce.boolean().default(true),
+  FUNDING_INTERVAL_MS: z.coerce.number().default(28_800_000),
 });
 
 export const config = envSchema.parse(process.env);

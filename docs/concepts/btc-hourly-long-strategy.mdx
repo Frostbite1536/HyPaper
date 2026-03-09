@@ -1,0 +1,33 @@
+# BTC Hourly Long Strategy
+
+This strategy adds BTC exposure once per hour by buying a fixed USD notional.
+
+## Core Logic
+
+1. Check `GET /health` before each run.
+2. Fetch BTC mid price via `POST /info {"type":"allMids"}`.
+3. Compute size as `usdNotional / midPrice`.
+4. Submit a buy order via `POST /exchange`:
+   - `b: true` (buy)
+   - `r: false` (not reduce-only)
+   - `t.limit.tif: "Ioc"` by default
+   - limit price set slightly above mid (`mid * (1 + slippageBps / 10000)`) to improve immediate fill probability.
+5. If the buy fills, attach paired reduce-only trigger exits via `POST /exchange`:
+   - TP: sell trigger with `tpsl: "tp"` at `fillPrice * (1 + tpPct / 100)`
+   - SL: sell trigger with `tpsl: "sl"` at `fillPrice * (1 - slPct / 100)`
+6. Query `POST /info {"type":"clearinghouseState","user":"<wallet>"}` and log resulting position.
+
+## Why This Works
+
+- It behaves like hourly DCA into BTC.
+- Using a positive limit premium plus `IOC` avoids leaving stale resting orders.
+- Auto-attached TP/SL ensures each increment can exit by target or stop.
+- Fixed USD size scales quantity down when price rises and up when price falls.
+
+## Risk Controls
+
+- Keep notional per hour small relative to account value.
+- Optionally set leverage once at startup (`updateLeverage`) and keep it conservative.
+- Monitor `position.szi`, account value, and margin usage from `clearinghouseState`.
+- Tune `tpPct` and `slPct` for volatility; set either to `0` to disable TP/SL.
+- Run with `--max-runs` during tests before long-running deployment.
