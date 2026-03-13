@@ -98,7 +98,7 @@ export function startPgSink(eventBus: EventEmitter): void {
           closedPnl: event.fill.closedPnl,
           time: event.fill.time,
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing({ target: lmFills.tid });
     });
   });
 

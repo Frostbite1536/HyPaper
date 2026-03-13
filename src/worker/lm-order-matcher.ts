@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
 import { logger } from '../utils/logger.js';
-import { D, sub, mul, add, isZero, gt, lt, lte, gte, div } from '../utils/math.js';
+import { sub, mul, add, isZero, gt, lt, lte, gte, div } from '../utils/math.js';
 import { nextTid } from '../utils/id.js';
 import type { LmPaperOrder, LmPaperFill, LmPaperPosition } from '../types/limitless-order.js';
 
@@ -34,6 +34,7 @@ export class LmOrderMatcher {
       const oid = parseInt(oidStr, 10);
       const data = await redis.hgetall(KEYS.LM_ORDER(oid));
       if (!data.oid) {
+        logger.warn({ oid: oidStr }, 'LM order in open set has no data — removing from open set');
         await redis.srem(KEYS.LM_ORDERS_OPEN, oidStr);
         continue;
       }
@@ -93,9 +94,12 @@ export class LmOrderMatcher {
     if (order.side === 'buy') {
       const cost = mul(fillPrice, fillSize);
 
-      // Check balance
-      const balance = await redis.hget(KEYS.LM_USER_ACCOUNT(userId), 'balance');
-      if (!balance || lt(balance, cost)) {
+      // Atomic balance deduction: deduct first, check result, rollback if negative
+      const newBalanceStr = await redis.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', `-${cost}`);
+      const newBalanceNum = parseFloat(newBalanceStr);
+      if (newBalanceNum < 0) {
+        // Rollback: re-add the deducted amount
+        await redis.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', cost);
         logger.warn({ userId, oid: order.oid }, 'LM fill skipped: insufficient balance');
         return;
       }
@@ -108,18 +112,16 @@ export class LmOrderMatcher {
       const oldBalance = outcome === 'yes' ? pos.yesBalance : pos.noBalance;
       const oldCost = outcome === 'yes' ? pos.yesCost : pos.noCost;
 
-      const newBalance = add(oldBalance, fillSize);
+      const newTokenBalance = add(oldBalance, fillSize);
       const newCost = add(oldCost, cost);
-      const newAvgPrice = isZero(newBalance) ? '0' : div(newCost, newBalance);
+      const newAvgPrice = gt(newTokenBalance, '0') ? div(newCost, newTokenBalance) : '0';
 
       const pipeline = redis.pipeline();
-      // Deduct balance
-      pipeline.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', `-${cost}`);
       // Update position
       pipeline.hset(KEYS.LM_USER_POS(userId, slug),
         'userId', userId,
         'marketSlug', slug,
-        balanceField, newBalance,
+        balanceField, newTokenBalance,
         costField, newCost,
         avgField, newAvgPrice,
       );
@@ -160,6 +162,9 @@ export class LmOrderMatcher {
       const costReduction = mul(avgEntryPrice, fillSize);
       const newCost = sub(oldCost, costReduction);
 
+      // Read the OTHER side's balance using post-fill values for cleanup check
+      const otherBalance = outcome === 'yes' ? pos.noBalance : pos.yesBalance;
+
       const pipeline = redis.pipeline();
       // Credit proceeds
       pipeline.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', proceeds);
@@ -171,7 +176,6 @@ export class LmOrderMatcher {
           avgField, '0',
         );
         // Check if the other side also zero — if so, remove position
-        const otherBalance = outcome === 'yes' ? pos.noBalance : pos.yesBalance;
         if (isZero(otherBalance)) {
           pipeline.del(KEYS.LM_USER_POS(userId, slug));
           pipeline.srem(KEYS.LM_USER_POSITIONS(userId), slug);

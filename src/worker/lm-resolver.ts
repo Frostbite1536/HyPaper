@@ -85,13 +85,13 @@ export class LmResolver {
 
           const fill: LmPaperFill = {
             tid,
-            oid: 0, // No order for resolution fills
+            oid: null,
             userId,
             marketSlug: slug,
             outcome: winningOutcome as 'yes' | 'no',
-            side: 'sell',
+            side: 'resolution',
             price: isZero(payout) ? '0' : '1',
-            size: payout,
+            size: add(yesBalance, noBalance),
             fee: '0',
             closedPnl,
             time: now,

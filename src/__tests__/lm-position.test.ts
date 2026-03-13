@@ -102,8 +102,8 @@ describe('getLmOpenOrders', () => {
   });
 
   it('returns only open orders', async () => {
-    // Open order
-    await redisMock.zadd(KEYS.LM_USER_ORDERS(USER), 1000, '1');
+    // Open order — must be in LM_ORDERS_OPEN set
+    await redisMock.sadd(KEYS.LM_ORDERS_OPEN, '1');
     await redisMock.hset(KEYS.LM_ORDER(1),
       'oid', '1', 'userId', USER,
       'marketSlug', 'test-market', 'outcome', 'yes', 'side', 'buy',
@@ -111,8 +111,7 @@ describe('getLmOpenOrders', () => {
       'status', 'open', 'filledSize', '0', 'avgFillPrice', '0',
       'createdAt', '1000', 'updatedAt', '1000',
     );
-    // Filled order
-    await redisMock.zadd(KEYS.LM_USER_ORDERS(USER), 2000, '2');
+    // Filled order — NOT in LM_ORDERS_OPEN
     await redisMock.hset(KEYS.LM_ORDER(2),
       'oid', '2', 'userId', USER,
       'marketSlug', 'test-market', 'outcome', 'yes', 'side', 'buy',

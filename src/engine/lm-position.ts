@@ -116,13 +116,14 @@ export async function getLmPortfolio(userId: string): Promise<LmPortfolio> {
 }
 
 export async function getLmOpenOrders(userId: string): Promise<LmPaperOrder[]> {
-  const oids = await redis.zrange(KEYS.LM_USER_ORDERS(userId), 0, -1);
+  // Use the global open orders set and filter by userId for efficiency
+  const openOids = await redis.smembers(KEYS.LM_ORDERS_OPEN);
   const openOrders: LmPaperOrder[] = [];
 
-  for (const oidStr of oids) {
+  for (const oidStr of openOids) {
     const oid = parseInt(oidStr, 10);
     const data = await redis.hgetall(KEYS.LM_ORDER(oid));
-    if (!data.oid || data.status !== 'open') continue;
+    if (!data.oid || data.userId !== userId) continue;
 
     openOrders.push({
       oid,

@@ -8,8 +8,15 @@ import { eventBus } from '../worker/index.js';
 import { LmOrderMatcher } from '../worker/lm-order-matcher.js';
 import { upsertUser } from '../store/pg-sink.js';
 import type { LmPaperOrder } from '../types/limitless-order.js';
+import type { LmCachedMarket } from '../types/limitless.js';
 
 const matcher = new LmOrderMatcher(eventBus);
+
+function isValidCachedMarket(v: unknown): v is LmCachedMarket {
+  return typeof v === 'object' && v !== null
+    && typeof (v as LmCachedMarket).slug === 'string'
+    && typeof (v as LmCachedMarket).status === 'string';
+}
 
 export async function ensureLmAccount(userId: string): Promise<void> {
   const exists = await redis.exists(KEYS.LM_USER_ACCOUNT(userId));
@@ -37,21 +44,24 @@ export async function placeLmOrder(
   if (!marketRaw) {
     return { status: 'error', message: `Market not found: ${marketSlug}` };
   }
-  const market = JSON.parse(marketRaw);
+  const market: unknown = JSON.parse(marketRaw);
+  if (!isValidCachedMarket(market)) {
+    return { status: 'error', message: `Corrupted market data for: ${marketSlug}` };
+  }
   if (market.status !== 'FUNDED') {
     return { status: 'error', message: `Market is not active (status: ${market.status})` };
   }
 
   // 2. VALIDATE PRICE (INV-DATA-002)
   const pxNum = Number(price);
-  if (isNaN(pxNum) || pxNum < 0.01 || pxNum > 0.99) {
+  if (!Number.isFinite(pxNum) || pxNum < 0.01 || pxNum > 0.99) {
     return { status: 'error', message: 'Price must be between 0.01 and 0.99' };
   }
 
   // Validate size > 0
   const szNum = Number(size);
-  if (isNaN(szNum) || szNum <= 0) {
-    return { status: 'error', message: 'Size must be greater than 0' };
+  if (!Number.isFinite(szNum) || szNum <= 0) {
+    return { status: 'error', message: 'Size must be a finite positive number' };
   }
 
   // 3. VALIDATE BALANCE (INV-DATA-003)
@@ -194,13 +204,14 @@ export async function cancelAllLmOrders(
   userId: string,
   marketSlug: string,
 ): Promise<{ cancelled: number }> {
-  const oids = await redis.zrange(KEYS.LM_USER_ORDERS(userId), 0, -1);
+  // Use the open orders set for efficiency — only open orders need checking
+  const openOids = await redis.smembers(KEYS.LM_ORDERS_OPEN);
   let cancelled = 0;
 
-  for (const oidStr of oids) {
+  for (const oidStr of openOids) {
     const oid = parseInt(oidStr, 10);
     const orderData = await redis.hgetall(KEYS.LM_ORDER(oid));
-    if (orderData.marketSlug !== marketSlug || orderData.status !== 'open') continue;
+    if (orderData.userId !== userId || orderData.marketSlug !== marketSlug || orderData.status !== 'open') continue;
 
     const result = await cancelLmOrder(userId, oid);
     if (result.status === 'ok') cancelled++;

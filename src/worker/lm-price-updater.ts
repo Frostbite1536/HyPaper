@@ -67,6 +67,16 @@ export class LmPriceUpdater {
 
     logger.info({ count: totalSeeded }, 'Seeded Limitless markets');
 
+    // Clean up stale price entries for markets no longer tracked
+    const existingPriceSlugs = Object.keys(await redis.hgetall(KEYS.LM_MARKET_PRICES));
+    const activeMarketSlugs = Object.keys(await redis.hgetall(KEYS.LM_MARKETS));
+    const activeSlugsSet = new Set(activeMarketSlugs);
+    for (const slug of existingPriceSlugs) {
+      if (!activeSlugsSet.has(slug)) {
+        await redis.hdel(KEYS.LM_MARKET_PRICES, slug);
+      }
+    }
+
     if (Object.keys(allPrices).length > 0) {
       this.eventBus.emit('lm:mids', { prices: allPrices });
     }
@@ -103,8 +113,12 @@ export class LmPriceUpdater {
       }
     }
 
-    const noPrice = D('1').minus(D(yesPrice)).toString();
+    const noPrice = this.clampPrice(D('1').minus(D(yesPrice)).toNumber());
     const priceObj = { yes: yesPrice, no: noPrice };
+
+    // Only write prices for markets we're tracking
+    const marketExists = await redis.hexists(KEYS.LM_MARKETS, slug);
+    if (!marketExists) return;
 
     await redis.hset(KEYS.LM_MARKET_PRICES, slug, JSON.stringify(priceObj));
     await redis.set(KEYS.LM_MARKET_ORDERBOOK(slug), JSON.stringify(orderbook));
@@ -119,7 +133,7 @@ export class LmPriceUpdater {
 
       if (orderbook.adjustedMidpoint != null) {
         const yesPrice = this.clampPrice(orderbook.adjustedMidpoint);
-        const noPrice = D('1').minus(D(yesPrice)).toString();
+        const noPrice = this.clampPrice(D('1').minus(D(yesPrice)).toNumber());
         await redis.hset(KEYS.LM_MARKET_PRICES, slug, JSON.stringify({ yes: yesPrice, no: noPrice }));
       }
     } catch (err) {

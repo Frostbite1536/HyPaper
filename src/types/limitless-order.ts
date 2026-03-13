@@ -1,4 +1,4 @@
-export type LmOrderSide = 'buy' | 'sell';
+export type LmOrderSide = 'buy' | 'sell' | 'resolution';
 export type LmOutcome = 'yes' | 'no';
 export type LmOrderType = 'limit' | 'market';
 export type LmOrderStatus = 'open' | 'filled' | 'cancelled' | 'rejected';
@@ -21,7 +21,7 @@ export interface LmPaperOrder {
 
 export interface LmPaperFill {
   tid: number;                // from shared seq:tid sequence
-  oid: number;
+  oid: number | null;         // null for resolution fills
   userId: string;
   marketSlug: string;
   outcome: LmOutcome;

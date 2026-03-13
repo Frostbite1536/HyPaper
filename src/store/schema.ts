@@ -77,15 +77,16 @@ export const lmOrders = pgTable('lm_orders', {
   index('lm_orders_user_id_idx').on(table.userId),
   index('lm_orders_user_id_status_idx').on(table.userId, table.status),
   index('lm_orders_market_slug_idx').on(table.marketSlug),
+  index('lm_orders_market_slug_status_idx').on(table.marketSlug, table.status),
 ]);
 
 export const lmFills = pgTable('lm_fills', {
   tid: integer('tid').primaryKey(),
   userId: text('user_id').notNull().references(() => users.userId),
-  oid: integer('oid').notNull().references(() => lmOrders.oid),
+  oid: integer('oid').references(() => lmOrders.oid),  // null for resolution fills
   marketSlug: text('market_slug').notNull(),
   outcome: text('outcome').notNull(),           // 'yes' | 'no'
-  side: text('side').notNull(),                 // 'buy' | 'sell'
+  side: text('side').notNull(),                 // 'buy' | 'sell' | 'resolution'
   price: text('price').notNull(),
   size: text('size').notNull(),
   fee: text('fee').notNull(),

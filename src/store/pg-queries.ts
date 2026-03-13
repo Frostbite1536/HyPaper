@@ -90,7 +90,7 @@ function rowToLmFill(row: typeof lmFills.$inferSelect): LmPaperFill {
     userId: row.userId,
     marketSlug: row.marketSlug,
     outcome: row.outcome as 'yes' | 'no',
-    side: row.side as 'buy' | 'sell',
+    side: row.side as LmPaperFill['side'],
     price: row.price,
     size: row.size,
     fee: row.fee,
