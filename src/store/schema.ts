@@ -56,3 +56,42 @@ export const fills = pgTable('fills', {
   index('fills_user_id_time_idx').on(table.userId, table.time),
   index('fills_oid_idx').on(table.oid),
 ]);
+
+// ---------- Limitless Paper Trading Tables ----------
+
+export const lmOrders = pgTable('lm_orders', {
+  oid: integer('oid').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.userId),
+  marketSlug: text('market_slug').notNull(),
+  outcome: text('outcome').notNull(),           // 'yes' | 'no'
+  side: text('side').notNull(),                 // 'buy' | 'sell'
+  price: text('price').notNull(),               // decimal string
+  size: text('size').notNull(),                 // decimal string
+  orderType: text('order_type').notNull(),      // 'limit' | 'market'
+  status: text('status').notNull(),             // 'open' | 'filled' | 'cancelled' | 'rejected'
+  filledSize: text('filled_size').notNull(),
+  avgFillPrice: text('avg_fill_price').notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+}, (table) => [
+  index('lm_orders_user_id_idx').on(table.userId),
+  index('lm_orders_user_id_status_idx').on(table.userId, table.status),
+  index('lm_orders_market_slug_idx').on(table.marketSlug),
+]);
+
+export const lmFills = pgTable('lm_fills', {
+  tid: integer('tid').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.userId),
+  oid: integer('oid').notNull().references(() => lmOrders.oid),
+  marketSlug: text('market_slug').notNull(),
+  outcome: text('outcome').notNull(),           // 'yes' | 'no'
+  side: text('side').notNull(),                 // 'buy' | 'sell'
+  price: text('price').notNull(),
+  size: text('size').notNull(),
+  fee: text('fee').notNull(),
+  closedPnl: text('closed_pnl').notNull(),
+  time: bigint('time', { mode: 'number' }).notNull(),
+}, (table) => [
+  index('lm_fills_user_id_time_idx').on(table.userId, table.time),
+  index('lm_fills_oid_idx').on(table.oid),
+]);
