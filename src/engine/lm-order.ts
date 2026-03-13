@@ -128,7 +128,10 @@ export async function placeLmOrder(
 
     const prices = JSON.parse(pricesRaw) as { yes: string; no: string };
     const currentPrice = outcome === 'yes' ? prices.yes : prices.no;
-    await matcher.executeFill(order, currentPrice);
+    const filled = await matcher.executeFill(order, currentPrice);
+    if (!filled) {
+      return { status: 'error', message: 'Market order could not be filled: insufficient balance' };
+    }
     return { status: 'ok', oid };
   }
 
@@ -142,8 +145,8 @@ export async function placeLmOrder(
       : gte(currentPrice, price);
 
     if (shouldFill) {
-      // Fill at the limit price (better for user)
-      await matcher.executeFill(order, price);
+      // Fill at market price (guaranteed at-or-better than limit)
+      await matcher.executeFill(order, currentPrice);
       return { status: 'ok', oid };
     }
   }
@@ -201,15 +204,23 @@ export async function cancelAllLmOrders(
   userId: string,
   marketSlug: string,
 ): Promise<{ cancelled: number }> {
-  // Use the open orders set for efficiency — only open orders need checking
   const openOids = await redis.smembers(KEYS.LM_ORDERS_OPEN);
-  let cancelled = 0;
+  if (openOids.length === 0) return { cancelled: 0 };
 
+  // Pipeline all reads to avoid N+1
+  const pipeline = redis.pipeline();
   for (const oidStr of openOids) {
-    const oid = parseInt(oidStr, 10);
-    const orderData = await redis.hgetall(KEYS.LM_ORDER(oid));
+    pipeline.hgetall(KEYS.LM_ORDER(parseInt(oidStr, 10)));
+  }
+  const results = await pipeline.exec();
+
+  let cancelled = 0;
+  for (let i = 0; i < openOids.length; i++) {
+    const [err, orderData] = results![i] as [Error | null, Record<string, string>];
+    if (err || !orderData) continue;
     if (orderData.userId !== userId || orderData.marketSlug !== marketSlug || orderData.status !== 'open') continue;
 
+    const oid = parseInt(openOids[i], 10);
     const result = await cancelLmOrder(userId, oid);
     if (result.status === 'ok') cancelled++;
   }

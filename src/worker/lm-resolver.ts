@@ -5,6 +5,7 @@ import { KEYS } from '../store/keys.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { add, isZero } from '../utils/math.js';
+import { cancelLmOrder } from '../engine/lm-order.js';
 import { nextTid } from '../utils/id.js';
 import type { LmPaperFill } from '../types/limitless-order.js';
 
@@ -97,8 +98,6 @@ export class LmResolver {
             time: now,
           };
 
-          await redis.lpush(KEYS.LM_USER_FILLS(userId), JSON.stringify(fill));
-
           // Clean up position
           await redis.del(KEYS.LM_USER_POS(userId, slug));
           await redis.srem(KEYS.LM_USER_POSITIONS(userId), slug);
@@ -111,6 +110,24 @@ export class LmResolver {
             winningOutcome,
             payout,
           });
+        }
+
+        // Remove users with no remaining positions from active set
+        for (const userId of activeUsers) {
+          const remainingSlugs = await redis.smembers(KEYS.LM_USER_POSITIONS(userId));
+          if (remainingSlugs.length === 0) {
+            await redis.srem(KEYS.LM_USERS_ACTIVE, userId);
+          }
+        }
+
+        // Cancel any remaining open orders for this market
+        const openOids = await redis.smembers(KEYS.LM_ORDERS_OPEN);
+        for (const oidStr of openOids) {
+          const oid = parseInt(oidStr, 10);
+          const orderData = await redis.hgetall(KEYS.LM_ORDER(oid));
+          if (orderData.marketSlug === slug && orderData.status === 'open') {
+            await cancelLmOrder(orderData.userId, oid);
+          }
         }
 
         // Clean up market from caches

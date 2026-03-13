@@ -5,16 +5,21 @@ import { logger } from '../../utils/logger.js';
 export const lmExchangeRouter = new Hono();
 
 lmExchangeRouter.post('/', async (c) => {
-  const body = await c.req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ status: 'err', response: 'Invalid JSON body' }, 400);
+  }
 
-  const rawWallet: string | undefined = body.wallet;
+  const rawWallet = body.wallet as string | undefined;
   if (!rawWallet || typeof rawWallet !== 'string') {
     return c.json({ status: 'err', response: 'Missing wallet address' }, 400);
   }
   const wallet = rawWallet.toLowerCase();
   await ensureLmAccount(wallet);
 
-  const action = body.action;
+  const action = body.action as Record<string, unknown> | undefined;
   if (!action || typeof action !== 'object' || !action.type) {
     return c.json({ status: 'err', response: 'Missing or invalid action' }, 400);
   }

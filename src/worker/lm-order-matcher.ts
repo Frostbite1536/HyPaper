@@ -8,6 +8,7 @@ import type { LmPaperOrder, LmPaperFill, LmPaperPosition } from '../types/limitl
 
 export class LmOrderMatcher {
   private isRunning = false;
+  private pendingMatch = false;
   private eventBus: EventEmitter;
 
   constructor(eventBus: EventEmitter) {
@@ -15,13 +16,22 @@ export class LmOrderMatcher {
   }
 
   async matchAll(): Promise<void> {
-    if (this.isRunning) return;
+    if (this.isRunning) {
+      this.pendingMatch = true;
+      return;
+    }
     this.isRunning = true;
     try {
       await this.matchOpenOrders();
+      // Re-run if a price update arrived during the cycle
+      while (this.pendingMatch) {
+        this.pendingMatch = false;
+        await this.matchOpenOrders();
+      }
     } catch (err) {
       logger.error({ err }, 'LM order matcher error');
     } finally {
+      this.pendingMatch = false;
       this.isRunning = false;
     }
   }
@@ -49,7 +59,13 @@ export class LmOrderMatcher {
       const pricesRaw = await redis.hget(KEYS.LM_MARKET_PRICES, order.marketSlug);
       if (!pricesRaw) continue;
 
-      const prices = JSON.parse(pricesRaw) as { yes: string; no: string };
+      let prices: { yes: string; no: string };
+      try {
+        prices = JSON.parse(pricesRaw) as { yes: string; no: string };
+      } catch {
+        logger.warn({ slug: order.marketSlug }, 'LM corrupted price data — skipping');
+        continue;
+      }
       const currentPrice = order.outcome === 'yes' ? prices.yes : prices.no;
 
       // Check fill condition:
@@ -60,15 +76,15 @@ export class LmOrderMatcher {
         : gte(currentPrice, order.price);
 
       if (shouldFill) {
-        // Fill at the limit price (better for user)
-        await this.executeFill(order, order.price);
+        // Fill at market price (guaranteed at-or-better than limit)
+        await this.executeFill(order, currentPrice);
       }
     }
   }
 
-  async executeFill(order: LmPaperOrder, fillPrice: string): Promise<void> {
+  async executeFill(order: LmPaperOrder, fillPrice: string): Promise<boolean> {
     const fillSize = sub(order.size, order.filledSize);
-    if (isZero(fillSize)) return;
+    if (isZero(fillSize)) return false;
 
     const userId = order.userId;
     const slug = order.marketSlug;
@@ -100,8 +116,9 @@ export class LmOrderMatcher {
       if (newBalanceNum < 0) {
         // Rollback: re-add the deducted amount
         await redis.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', cost);
-        logger.warn({ userId, oid: order.oid }, 'LM fill skipped: insufficient balance');
-        return;
+        logger.warn({ userId, oid: order.oid }, 'LM fill rejected: insufficient balance');
+        await this.rejectOrder(order);
+        return false;
       }
 
       // Update position
@@ -156,8 +173,9 @@ export class LmOrderMatcher {
       if (newTokenBalanceNum < 0) {
         // Rollback: re-add the deducted amount
         await redis.hincrbyfloat(KEYS.LM_USER_POS(userId, slug), tokenBalanceField, fillSize);
-        logger.warn({ userId, oid: order.oid }, 'LM fill skipped: insufficient tokens');
-        return;
+        logger.warn({ userId, oid: order.oid }, 'LM fill rejected: insufficient tokens');
+        await this.rejectOrder(order);
+        return false;
       }
 
       const newTokenBalance = newTokenBalanceStr;
@@ -168,8 +186,9 @@ export class LmOrderMatcher {
       const costReduction = mul(avgEntryPrice, fillSize);
       const newCost = sub(oldCost, costReduction);
 
-      // Read the OTHER side's balance for cleanup check
-      const otherBalance = outcome === 'yes' ? pos.noBalance : pos.yesBalance;
+      // Re-read the OTHER side's balance for cleanup check (avoid stale data from pos)
+      const otherField = outcome === 'yes' ? 'noBalance' : 'yesBalance';
+      const otherBalance = (await redis.hget(KEYS.LM_USER_POS(userId, slug), otherField)) ?? '0';
 
       const pipeline = redis.pipeline();
       // Credit proceeds
@@ -217,9 +236,6 @@ export class LmOrderMatcher {
       time: now,
     };
 
-    // Push fill to user's fill list
-    await redis.lpush(KEYS.LM_USER_FILLS(userId), JSON.stringify(fill));
-
     // Update order object for events
     const filledOrder: LmPaperOrder = {
       ...order,
@@ -231,6 +247,18 @@ export class LmOrderMatcher {
 
     this.eventBus.emit('lm:fill', { userId, fill });
     this.eventBus.emit('lm:orderUpdate', { userId, order: filledOrder, status: 'filled' });
+    return true;
+  }
+
+  private async rejectOrder(order: LmPaperOrder): Promise<void> {
+    const now = Date.now();
+    const pipeline = redis.pipeline();
+    pipeline.hset(KEYS.LM_ORDER(order.oid), 'status', 'rejected', 'updatedAt', now.toString());
+    pipeline.srem(KEYS.LM_ORDERS_OPEN, order.oid.toString());
+    await pipeline.exec();
+
+    const rejectedOrder: LmPaperOrder = { ...order, status: 'rejected', updatedAt: now };
+    this.eventBus.emit('lm:orderUpdate', { userId: order.userId, order: rejectedOrder, status: 'rejected' });
   }
 
   private parseOrder(data: Record<string, string>): LmPaperOrder {

@@ -103,7 +103,7 @@ export class LmPriceUpdater {
       const bestAsk = orderbook.asks.length > 0 ? orderbook.asks[0].price : null;
 
       if (bestBid != null && bestAsk != null) {
-        yesPrice = this.clampPrice(D(bestBid.toString()).plus(D(bestAsk.toString())).div(D('2')).toNumber());
+        yesPrice = this.clampPrice(D(bestBid.toString()).plus(D(bestAsk.toString())).div(D('2')).toString());
       } else if (bestBid != null) {
         yesPrice = this.clampPrice(bestBid);
       } else if (bestAsk != null) {
@@ -113,7 +113,7 @@ export class LmPriceUpdater {
       }
     }
 
-    const noPrice = this.clampPrice(D('1').minus(D(yesPrice)).toNumber());
+    const noPrice = this.clampPrice(D('1').minus(D(yesPrice)).toString());
     const priceObj = { yes: yesPrice, no: noPrice };
 
     // Only write prices for markets we're tracking
@@ -133,7 +133,7 @@ export class LmPriceUpdater {
 
       if (orderbook.adjustedMidpoint != null) {
         const yesPrice = this.clampPrice(orderbook.adjustedMidpoint);
-        const noPrice = this.clampPrice(D('1').minus(D(yesPrice)).toNumber());
+        const noPrice = this.clampPrice(D('1').minus(D(yesPrice)).toString());
         await redis.hset(KEYS.LM_MARKET_PRICES, slug, JSON.stringify({ yes: yesPrice, no: noPrice }));
       }
     } catch (err) {
@@ -148,8 +148,9 @@ export class LmPriceUpdater {
     }
   }
 
-  private clampPrice(price: number): string {
-    const clamped = Math.max(0.01, Math.min(0.99, price));
-    return D(clamped.toString()).toDecimalPlaces(4).toString();
+  private clampPrice(price: number | string): string {
+    const d = D(price.toString());
+    const clamped = d.lessThan('0.01') ? D('0.01') : d.greaterThan('0.99') ? D('0.99') : d;
+    return clamped.toDecimalPlaces(4).toString();
   }
 }

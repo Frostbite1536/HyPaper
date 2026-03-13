@@ -9,9 +9,14 @@ import { logger } from '../../utils/logger.js';
 export const lmInfoRouter = new Hono();
 
 lmInfoRouter.post('/', async (c) => {
-  const body = await c.req.json();
-  const type: string = body.type;
-  const user: string | undefined = body.user?.toLowerCase();
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+  const type: string = body.type as string;
+  const user: string | undefined = (body.user as string | undefined)?.toLowerCase();
 
   if (!type) return c.json({ error: 'Missing type' }, 400);
 
@@ -20,26 +25,39 @@ lmInfoRouter.post('/', async (c) => {
       case 'markets': {
         const marketsRaw: Record<string, string> = await redis.hgetall(KEYS.LM_MARKETS);
         const pricesRaw: Record<string, string> = await redis.hgetall(KEYS.LM_MARKET_PRICES);
-        const markets = Object.entries(marketsRaw).map(([slug, json]) => {
-          const market = JSON.parse(json);
-          const prices = pricesRaw[slug] ? JSON.parse(pricesRaw[slug]) : null;
-          return { ...market, currentPrices: prices };
-        });
+        const markets: unknown[] = [];
+        for (const [slug, json] of Object.entries(marketsRaw)) {
+          try {
+            const market = JSON.parse(json);
+            const prices = pricesRaw[slug] ? JSON.parse(pricesRaw[slug]) : null;
+            markets.push({ ...market, currentPrices: prices });
+          } catch {
+            logger.warn({ slug }, 'LM corrupted market data — skipping');
+          }
+        }
         return c.json({ markets });
       }
 
       case 'market': {
         if (!body.slug) return c.json({ error: 'Missing slug' }, 400);
-        const raw = await redis.hget(KEYS.LM_MARKETS, body.slug);
+        const raw = await redis.hget(KEYS.LM_MARKETS, body.slug as string);
         if (!raw) return c.json({ error: 'Market not found' }, 404);
-        const prices = await redis.hget(KEYS.LM_MARKET_PRICES, body.slug);
-        return c.json({ ...JSON.parse(raw), currentPrices: prices ? JSON.parse(prices) : null });
+        try {
+          const prices = await redis.hget(KEYS.LM_MARKET_PRICES, body.slug as string);
+          return c.json({ ...JSON.parse(raw), currentPrices: prices ? JSON.parse(prices) : null });
+        } catch {
+          return c.json({ error: 'Corrupted market data' }, 500);
+        }
       }
 
       case 'orderbook': {
         if (!body.slug) return c.json({ error: 'Missing slug' }, 400);
-        const raw = await redis.get(KEYS.LM_MARKET_ORDERBOOK(body.slug));
-        return c.json(raw ? JSON.parse(raw) : { bids: [], asks: [], adjustedMidpoint: null });
+        const raw = await redis.get(KEYS.LM_MARKET_ORDERBOOK(body.slug as string));
+        try {
+          return c.json(raw ? JSON.parse(raw) : { bids: [], asks: [], adjustedMidpoint: null });
+        } catch {
+          return c.json({ bids: [], asks: [], adjustedMidpoint: null });
+        }
       }
 
       case 'portfolio': {

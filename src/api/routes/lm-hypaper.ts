@@ -3,15 +3,20 @@ import { redis } from '../../store/redis.js';
 import { KEYS } from '../../store/keys.js';
 import { config } from '../../config.js';
 import { logger } from '../../utils/logger.js';
-import { ensureLmAccount } from '../../engine/lm-order.js';
+import { ensureLmAccount, cancelLmOrder } from '../../engine/lm-order.js';
 import { upsertUser, updateUserBalance } from '../../store/pg-sink.js';
 
 export const lmHypaperRouter = new Hono();
 
 lmHypaperRouter.post('/', async (c) => {
-  const body = await c.req.json();
-  const type: string = body.type;
-  const user: string | undefined = body.user;
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+  const type = body.type as string;
+  const user = body.user as string | undefined;
 
   if (!type) return c.json({ error: 'Missing type' }, 400);
   if (!user || typeof user !== 'string') return c.json({ error: 'Missing user' }, 400);
@@ -32,22 +37,23 @@ lmHypaperRouter.post('/', async (c) => {
         // Delete positions set
         pipeline.del(KEYS.LM_USER_POSITIONS(normalizedUser));
 
-        // Cancel all open orders
+        await pipeline.exec();
+
+        // Cancel only open orders (preserves filled/cancelled history)
         const oids = await redis.zrange(KEYS.LM_USER_ORDERS(normalizedUser), 0, -1);
         for (const oidStr of oids) {
           const oid = parseInt(oidStr, 10);
-          pipeline.hset(KEYS.LM_ORDER(oid), 'status', 'cancelled', 'updatedAt', Date.now().toString());
-          pipeline.srem(KEYS.LM_ORDERS_OPEN, oidStr);
+          const orderData = await redis.hgetall(KEYS.LM_ORDER(oid));
+          if (orderData.status === 'open') {
+            await cancelLmOrder(normalizedUser, oid);
+          }
         }
 
-        // Delete user orders and fills lists
-        pipeline.del(KEYS.LM_USER_ORDERS(normalizedUser));
-        pipeline.del(KEYS.LM_USER_FILLS(normalizedUser));
-
-        // Reset balance
-        pipeline.hset(KEYS.LM_USER_ACCOUNT(normalizedUser), 'balance', config.LM_DEFAULT_BALANCE.toString());
-
-        await pipeline.exec();
+        // Delete user orders list and reset balance
+        const resetPipeline = redis.pipeline();
+        resetPipeline.del(KEYS.LM_USER_ORDERS(normalizedUser));
+        resetPipeline.hset(KEYS.LM_USER_ACCOUNT(normalizedUser), 'balance', config.LM_DEFAULT_BALANCE.toString());
+        await resetPipeline.exec();
 
         upsertUser(normalizedUser, config.LM_DEFAULT_BALANCE.toString());
 
