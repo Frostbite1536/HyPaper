@@ -31,10 +31,13 @@ vi.mock('../store/pg-sink.js', () => ({
   updateUserBalance: vi.fn(),
 }));
 
-// Mock the eventBus
+// Mock the eventBus and shared matcher
 const eventBus = new EventEmitter();
+const { LmOrderMatcher } = await import('../worker/lm-order-matcher.js');
+const lmOrderMatcher = new LmOrderMatcher(eventBus);
 vi.mock('../worker/index.js', () => ({
   eventBus,
+  lmOrderMatcher,
 }));
 
 const { placeLmOrder, cancelLmOrder, ensureLmAccount } = await import('../engine/lm-order.js');

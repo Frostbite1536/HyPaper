@@ -59,8 +59,8 @@ describe('getLmPortfolio', () => {
     expect(pos.currentYesPrice).toBe('0.70');
     // totalMarketValue = 100 * 0.70 = 70
     expect(pos.totalMarketValue).toBe('70');
-    // accountValue = 9000 + 20 = 9020
-    expect(portfolio.accountValue).toBe('9020');
+    // accountValue = balance + totalMarketValue = 9000 + 70 = 9070
+    expect(portfolio.accountValue).toBe('9070');
   });
 
   it('calculates PnL for both YES and NO positions', async () => {
@@ -99,6 +99,36 @@ describe('getLmOpenOrders', () => {
   it('returns empty array when no orders', async () => {
     const orders = await getLmOpenOrders(USER);
     expect(orders).toHaveLength(0);
+  });
+
+  it('filters orders by userId and excludes other users', async () => {
+    const OTHER = '0xother';
+    // Open order for USER
+    await redisMock.sadd(KEYS.LM_ORDERS_OPEN, '1');
+    await redisMock.hset(KEYS.LM_ORDER(1),
+      'oid', '1', 'userId', USER,
+      'marketSlug', 'test-market', 'outcome', 'yes', 'side', 'buy',
+      'price', '0.50', 'size', '10', 'orderType', 'limit',
+      'status', 'open', 'filledSize', '0', 'avgFillPrice', '0',
+      'createdAt', '1000', 'updatedAt', '1000',
+    );
+    // Open order for OTHER user
+    await redisMock.sadd(KEYS.LM_ORDERS_OPEN, '2');
+    await redisMock.hset(KEYS.LM_ORDER(2),
+      'oid', '2', 'userId', OTHER,
+      'marketSlug', 'test-market', 'outcome', 'no', 'side', 'sell',
+      'price', '0.60', 'size', '20', 'orderType', 'limit',
+      'status', 'open', 'filledSize', '0', 'avgFillPrice', '0',
+      'createdAt', '2000', 'updatedAt', '2000',
+    );
+
+    const userOrders = await getLmOpenOrders(USER);
+    expect(userOrders).toHaveLength(1);
+    expect(userOrders[0].userId).toBe(USER);
+
+    const otherOrders = await getLmOpenOrders(OTHER);
+    expect(otherOrders).toHaveLength(1);
+    expect(otherOrders[0].userId).toBe(OTHER);
   });
 
   it('returns only open orders', async () => {

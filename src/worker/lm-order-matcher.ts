@@ -144,34 +144,39 @@ export class LmOrderMatcher {
       const tokenBalanceField = outcome === 'yes' ? 'yesBalance' : 'noBalance';
       const costField = outcome === 'yes' ? 'yesCost' : 'noCost';
       const avgField = outcome === 'yes' ? 'yesAvgPrice' : 'noAvgPrice';
-      const tokenBalance = outcome === 'yes' ? pos.yesBalance : pos.noBalance;
       const avgEntryPrice = outcome === 'yes' ? pos.yesAvgPrice : pos.noAvgPrice;
       const oldCost = outcome === 'yes' ? pos.yesCost : pos.noCost;
 
-      // Check token balance
-      if (lt(tokenBalance, fillSize)) {
+      // Atomic token balance deduction: deduct first, check result, rollback if negative
+      const negFillSize = `-${fillSize}`;
+      const newTokenBalanceStr = await redis.hincrbyfloat(
+        KEYS.LM_USER_POS(userId, slug), tokenBalanceField, negFillSize,
+      );
+      const newTokenBalanceNum = parseFloat(newTokenBalanceStr);
+      if (newTokenBalanceNum < 0) {
+        // Rollback: re-add the deducted amount
+        await redis.hincrbyfloat(KEYS.LM_USER_POS(userId, slug), tokenBalanceField, fillSize);
         logger.warn({ userId, oid: order.oid }, 'LM fill skipped: insufficient tokens');
         return;
       }
 
+      const newTokenBalance = newTokenBalanceStr;
       const proceeds = mul(fillPrice, fillSize);
       closedPnl = mul(sub(fillPrice, avgEntryPrice), fillSize);
 
-      const newTokenBalance = sub(tokenBalance, fillSize);
       // Proportionally reduce cost basis
       const costReduction = mul(avgEntryPrice, fillSize);
       const newCost = sub(oldCost, costReduction);
 
-      // Read the OTHER side's balance using post-fill values for cleanup check
+      // Read the OTHER side's balance for cleanup check
       const otherBalance = outcome === 'yes' ? pos.noBalance : pos.yesBalance;
 
       const pipeline = redis.pipeline();
       // Credit proceeds
       pipeline.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', proceeds);
-      // Update or clean position
+      // Update or clean position (token balance already deducted atomically above)
       if (isZero(newTokenBalance)) {
         pipeline.hset(KEYS.LM_USER_POS(userId, slug),
-          tokenBalanceField, '0',
           costField, '0',
           avgField, '0',
         );
@@ -182,7 +187,6 @@ export class LmOrderMatcher {
         }
       } else {
         pipeline.hset(KEYS.LM_USER_POS(userId, slug),
-          tokenBalanceField, newTokenBalance,
           costField, newCost,
         );
       }

@@ -193,6 +193,46 @@ describe('LmOrderMatcher', () => {
     expect(fillEvents).toHaveLength(0);
   });
 
+  // --- SELL NO fills when noPrice >= order.price ---
+  it('fills SELL NO order when noPrice >= order.price', async () => {
+    await seedUser('10000');
+    await seedPrice(SLUG, '0.40', '0.60');
+    // Seed a NO position
+    await redisMock.hset(KEYS.LM_USER_POS(USER, SLUG),
+      'userId', USER, 'marketSlug', SLUG,
+      'yesBalance', '0', 'noBalance', '80',
+      'yesCost', '0', 'noCost', '32',
+      'yesAvgPrice', '0', 'noAvgPrice', '0.40',
+    );
+    await createOpenOrder({ oid: 10, marketSlug: SLUG, outcome: 'no', side: 'sell', price: '0.55', size: '80' });
+
+    await matcher.matchAll();
+
+    expect(fillEvents).toHaveLength(1);
+    expect(fillEvents[0].fill.side).toBe('sell');
+    expect(fillEvents[0].fill.outcome).toBe('no');
+    // closedPnl = (0.55 - 0.40) * 80 = 12
+    expect(fillEvents[0].fill.closedPnl).toBe('12');
+  });
+
+  // --- SELL with insufficient tokens skips fill ---
+  it('skips SELL fill when token balance is insufficient', async () => {
+    await seedUser('10000');
+    await seedPrice(SLUG, '0.70', '0.30');
+    // Seed a YES position with only 10 tokens
+    await redisMock.hset(KEYS.LM_USER_POS(USER, SLUG),
+      'userId', USER, 'marketSlug', SLUG,
+      'yesBalance', '10', 'noBalance', '0',
+      'yesCost', '5', 'noCost', '0',
+      'yesAvgPrice', '0.50', 'noAvgPrice', '0',
+    );
+    await createOpenOrder({ oid: 11, marketSlug: SLUG, outcome: 'yes', side: 'sell', price: '0.65', size: '50' });
+
+    await matcher.matchAll();
+
+    expect(fillEvents).toHaveLength(0);
+  });
+
   // --- No price data → no fill ---
   it('does not fill when no price data available', async () => {
     await seedUser('10000');

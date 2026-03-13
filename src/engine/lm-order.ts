@@ -4,13 +4,10 @@ import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { lte, gte, isZero, lt, mul } from '../utils/math.js';
 import { nextOid } from '../utils/id.js';
-import { eventBus } from '../worker/index.js';
-import { LmOrderMatcher } from '../worker/lm-order-matcher.js';
+import { eventBus, lmOrderMatcher as matcher } from '../worker/index.js';
 import { upsertUser } from '../store/pg-sink.js';
 import type { LmPaperOrder } from '../types/limitless-order.js';
 import type { LmCachedMarket } from '../types/limitless.js';
-
-const matcher = new LmOrderMatcher(eventBus);
 
 function isValidCachedMarket(v: unknown): v is LmCachedMarket {
   return typeof v === 'object' && v !== null

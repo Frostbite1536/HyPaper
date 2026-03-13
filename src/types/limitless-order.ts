@@ -1,4 +1,5 @@
-export type LmOrderSide = 'buy' | 'sell' | 'resolution';
+export type LmOrderSide = 'buy' | 'sell';
+export type LmFillSide = 'buy' | 'sell' | 'resolution';
 export type LmOutcome = 'yes' | 'no';
 export type LmOrderType = 'limit' | 'market';
 export type LmOrderStatus = 'open' | 'filled' | 'cancelled' | 'rejected';
@@ -25,7 +26,7 @@ export interface LmPaperFill {
   userId: string;
   marketSlug: string;
   outcome: LmOutcome;
-  side: LmOrderSide;
+  side: LmFillSide;
   price: string;              // fill price
   size: string;               // fill size
   fee: string;                // '0' (no fees for v1)

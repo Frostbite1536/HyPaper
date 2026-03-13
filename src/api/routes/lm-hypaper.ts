@@ -56,8 +56,8 @@ lmHypaperRouter.post('/', async (c) => {
 
       case 'setBalance': {
         const newBalance = body.balance;
-        if (typeof newBalance !== 'number' || newBalance < 0) {
-          return c.json({ error: 'Invalid balance (must be non-negative number)' }, 400);
+        if (typeof newBalance !== 'number' || newBalance < 0 || newBalance > 1_000_000_000) {
+          return c.json({ error: 'Invalid balance (must be non-negative number up to 1,000,000,000)' }, 400);
         }
         await redis.hset(KEYS.LM_USER_ACCOUNT(normalizedUser), 'balance', newBalance.toString());
         updateUserBalance(normalizedUser, newBalance.toString());
@@ -78,6 +78,6 @@ lmHypaperRouter.post('/', async (c) => {
     }
   } catch (err) {
     logger.error({ err, type }, 'LM hypaper error');
-    return c.json({ error: String(err) }, 500);
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });

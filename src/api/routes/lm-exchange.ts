@@ -49,7 +49,7 @@ lmExchangeRouter.post('/', async (c) => {
         if (result.status === 'error') {
           return c.json({ status: 'err', response: result.message }, 400);
         }
-        return c.json({ status: 'ok', response: { oid: result.oid } });
+        return c.json({ status: 'ok', response: { type: 'order', data: { oid: result.oid } } });
       }
 
       case 'cancel': {
@@ -76,6 +76,6 @@ lmExchangeRouter.post('/', async (c) => {
     }
   } catch (err) {
     logger.error({ err, action: action.type }, 'LM exchange error');
-    return c.json({ status: 'err', response: String(err) }, 500);
+    return c.json({ status: 'err', response: 'Internal server error' }, 500);
   }
 });

@@ -15,6 +15,7 @@ import type { HlMeta, HlAssetCtx } from '../types/hl.js';
 import type { OrderbookUpdate } from '@limitless-exchange/sdk';
 
 export const eventBus = new EventEmitter();
+export const lmOrderMatcher = new LmOrderMatcher(eventBus);
 
 export class Worker {
   private wsClient: HlWebSocketClient | null = null;
@@ -23,7 +24,7 @@ export class Worker {
   private fundingWorker: FundingWorker;
   private lmPriceUpdater: LmPriceUpdater | null = null;
   private lmWsClient: LmWebSocketClientWrapper | null = null;
-  private lmOrderMatcher: LmOrderMatcher | null = null;
+  private lmOrderMatcherRef: LmOrderMatcher | null = null;
   private lmResolver: LmResolver | null = null;
 
   constructor() {
@@ -39,7 +40,7 @@ export class Worker {
     });
 
     if (config.LM_ENABLED) {
-      this.lmOrderMatcher = new LmOrderMatcher(eventBus);
+      this.lmOrderMatcherRef = lmOrderMatcher;
       this.lmPriceUpdater = new LmPriceUpdater(eventBus);
 
       this.lmWsClient = new LmWebSocketClientWrapper((event, data) => {
@@ -53,7 +54,7 @@ export class Worker {
 
       // Wire up: when prices change, run matcher
       eventBus.on('lm:mids', () => {
-        this.lmOrderMatcher!.matchAll();
+        this.lmOrderMatcherRef!.matchAll();
       });
     }
   }

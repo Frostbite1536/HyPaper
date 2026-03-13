@@ -39,7 +39,7 @@ export async function getLmPortfolio(userId: string): Promise<LmPortfolio> {
 
   for (const slug of slugs) {
     const posData = await redis.hgetall(KEYS.LM_USER_POS(userId, slug));
-    if (!posData.yesBalance && !posData.noBalance) continue;
+    if (isZero(posData.yesBalance ?? '0') && isZero(posData.noBalance ?? '0')) continue;
 
     const yesBalance = posData.yesBalance ?? '0';
     const noBalance = posData.noBalance ?? '0';
@@ -104,7 +104,7 @@ export async function getLmPortfolio(userId: string): Promise<LmPortfolio> {
     });
   }
 
-  const accountValue = add(balance, totalUnrealizedPnl);
+  const accountValue = add(balance, totalMarketValue);
 
   return {
     balance,

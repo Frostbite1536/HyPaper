@@ -63,7 +63,9 @@ lmInfoRouter.post('/', async (c) => {
 
       case 'userFillsByTime': {
         if (!user) return c.json({ error: 'Missing user' }, 400);
-        return c.json(await getLmUserFillsByTime(user, body.startTime ?? 0, body.endTime));
+        const startTime = typeof body.startTime === 'number' ? body.startTime : 0;
+        const endTime = typeof body.endTime === 'number' ? body.endTime : undefined;
+        return c.json(await getLmUserFillsByTime(user, startTime, endTime));
       }
 
       case 'balance': {
@@ -78,6 +80,6 @@ lmInfoRouter.post('/', async (c) => {
     }
   } catch (err) {
     logger.error({ err, type }, 'LM info error');
-    return c.json({ error: String(err) }, 500);
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
