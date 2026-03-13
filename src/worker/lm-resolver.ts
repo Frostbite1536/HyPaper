@@ -50,6 +50,12 @@ export class LmResolver {
         const market = await this.marketFetcher.getMarket(slug);
         if (market.winningOutcomeIndex == null) continue;
 
+        // INV-XCOMP-004: Bounds-check winningOutcomeIndex (must be 0 or 1)
+        if (market.winningOutcomeIndex !== 0 && market.winningOutcomeIndex !== 1) {
+          logger.warn({ slug, winningOutcomeIndex: market.winningOutcomeIndex }, 'LM market has invalid winningOutcomeIndex — skipping');
+          continue;
+        }
+
         // Market resolved! winningOutcomeIndex 0 = YES wins, 1 = NO wins
         const winningOutcome = market.winningOutcomeIndex === 0 ? 'yes' : 'no';
 

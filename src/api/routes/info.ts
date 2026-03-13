@@ -38,7 +38,12 @@ function getCacheKey(body: Record<string, unknown>): string {
 const PROXIED_TYPES = new Set(Object.keys(PROXY_TTL));
 
 infoRouter.post('/', async (c) => {
-  const body = await c.req.json();
+  let body: Record<string, any>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
   const type: string = body.type;
   const user: string | undefined = body.user?.toLowerCase();
 
@@ -99,6 +104,9 @@ infoRouter.post('/', async (c) => {
       }
 
       case 'orderStatus': {
+        if (typeof body.oid !== 'number' || !Number.isFinite(body.oid) || body.oid < 0) {
+          return c.json({ error: 'Missing or invalid oid' }, 400);
+        }
         const status = await getOrderStatus(body.oid);
         return c.json(status);
       }

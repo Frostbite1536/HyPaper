@@ -2,7 +2,7 @@ import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
-import { lte, gte, isZero, lt, mul } from '../utils/math.js';
+import { D, lte, gte, isZero, lt, mul } from '../utils/math.js';
 import { nextOid } from '../utils/id.js';
 import { eventBus, lmOrderMatcher as matcher } from '../worker/index.js';
 import { upsertUser } from '../store/pg-sink.js';
@@ -49,15 +49,25 @@ export async function placeLmOrder(
     return { status: 'error', message: `Market is not active (status: ${market.status})` };
   }
 
-  // 2. VALIDATE PRICE (INV-DATA-002)
-  const pxNum = Number(price);
-  if (!Number.isFinite(pxNum) || pxNum < 0.01 || pxNum > 0.99) {
+  // 2. VALIDATE PRICE (INV-DATA-002) — use Decimal, not Number()
+  let pxDecimal;
+  try {
+    pxDecimal = D(price);
+  } catch {
+    return { status: 'error', message: 'Price must be between 0.01 and 0.99' };
+  }
+  if (!pxDecimal.isFinite() || pxDecimal.lessThan('0.01') || pxDecimal.greaterThan('0.99')) {
     return { status: 'error', message: 'Price must be between 0.01 and 0.99' };
   }
 
-  // Validate size > 0
-  const szNum = Number(size);
-  if (!Number.isFinite(szNum) || szNum <= 0) {
+  // Validate size > 0 — use Decimal, not Number()
+  let szDecimal;
+  try {
+    szDecimal = D(size);
+  } catch {
+    return { status: 'error', message: 'Size must be a finite positive number' };
+  }
+  if (!szDecimal.isFinite() || szDecimal.lessThanOrEqualTo('0')) {
     return { status: 'error', message: 'Size must be a finite positive number' };
   }
 

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
 import { logger } from '../utils/logger.js';
-import { sub, mul, add, isZero, gt, lt, lte, gte, div } from '../utils/math.js';
+import { D, sub, mul, add, isZero, gt, lt, lte, gte, div } from '../utils/math.js';
 import { nextTid } from '../utils/id.js';
 import type { LmPaperOrder, LmPaperFill, LmPaperPosition } from '../types/limitless-order.js';
 
@@ -83,6 +83,20 @@ export class LmOrderMatcher {
   }
 
   async executeFill(order: LmPaperOrder, fillPrice: string): Promise<boolean> {
+    // INV-ORD-001: Recheck order status to prevent race with cancellation
+    const currentStatus = await redis.hget(KEYS.LM_ORDER(order.oid), 'status');
+    if (currentStatus !== 'open') {
+      logger.debug({ oid: order.oid, currentStatus }, 'LM executeFill skipped: order no longer open');
+      return false;
+    }
+
+    // INV-XCOMP-001: Validate fill price is a finite number
+    const fillPriceDecimal = D(fillPrice);
+    if (!fillPriceDecimal.isFinite()) {
+      logger.warn({ oid: order.oid, fillPrice }, 'LM executeFill skipped: non-finite fill price');
+      return false;
+    }
+
     const fillSize = sub(order.size, order.filledSize);
     if (isZero(fillSize)) return false;
 
@@ -112,8 +126,7 @@ export class LmOrderMatcher {
 
       // Atomic balance deduction: deduct first, check result, rollback if negative
       const newBalanceStr = await redis.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', `-${cost}`);
-      const newBalanceNum = parseFloat(newBalanceStr);
-      if (newBalanceNum < 0) {
+      if (lt(newBalanceStr, '0')) {
         // Rollback: re-add the deducted amount
         await redis.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', cost);
         logger.warn({ userId, oid: order.oid }, 'LM fill rejected: insufficient balance');
@@ -169,8 +182,7 @@ export class LmOrderMatcher {
       const newTokenBalanceStr = await redis.hincrbyfloat(
         KEYS.LM_USER_POS(userId, slug), tokenBalanceField, negFillSize,
       );
-      const newTokenBalanceNum = parseFloat(newTokenBalanceStr);
-      if (newTokenBalanceNum < 0) {
+      if (lt(newTokenBalanceStr, '0')) {
         // Rollback: re-add the deducted amount
         await redis.hincrbyfloat(KEYS.LM_USER_POS(userId, slug), tokenBalanceField, fillSize);
         logger.warn({ userId, oid: order.oid }, 'LM fill rejected: insufficient tokens');

@@ -136,3 +136,12 @@ export interface LmOrderUpdateEvent {
   order: LmPaperOrder;
   status: string;
 }
+
+export interface FundingEvent {
+  userId: string;
+  coin: string;
+  szi: string;
+  fundingRate: string;
+  fundingCharge: string;
+  timestamp: number;
+}

@@ -29,10 +29,7 @@ These are the **non-negotiable truths** of HyPaper. If a change violates an inva
 
 **Enforcement**: Use `src/utils/math.ts` helpers (`D()`, `add()`, `sub()`, `mul()`, `div()`). All Redis fields and Postgres columns storing money use `text` type.
 
-**Known Violations**:
-- `lm-order.ts:53,59`: Uses `Number(price)` for validation instead of Decimal
-- `lm-order-matcher.ts:115`: Uses `parseFloat()` for balance rollback check
-- `hypaper.ts:77`: Accepts `typeof balance === 'number'` without NaN check
+**Known Violations**: None (fixed 2026-03-13)
 
 ### INV-DATA-002: LM Price Bounds
 
@@ -47,7 +44,7 @@ These are the **non-negotiable truths** of HyPaper. If a change violates an inva
 
 **Enforcement**: `clampPrice()` in `lm-price-updater.ts` clamps to [0.01, 0.99]. `lm-order.ts` validates order price is in [0.01, 0.99].
 
-**Known Violation**: `clampPrice()` does not reject NaN/Infinity — these bypass the clamp logic because `NaN < 0.01` is `false`.
+**Known Violations**: None (fixed 2026-03-13 — `clampPrice()` now checks `isFinite()` before clamping)
 
 ### INV-DATA-003: Balance Non-Negativity
 
@@ -115,7 +112,7 @@ These are the **non-negotiable truths** of HyPaper. If a change violates an inva
 
 **Enforcement**: Check `status === 'open'` before any fill or cancel operation.
 
-**Known Violation**: `lm-order-matcher.ts:executeFill()` does not recheck `order.status === 'open'` before executing the fill. A cancelled order could theoretically be filled if cancellation races with matching.
+**Known Violations**: None (fixed 2026-03-13 — `executeFill()` now rechecks `order.status` from Redis before filling)
 
 ### INV-ORD-002: Open Order Set Consistency
 
@@ -149,7 +146,7 @@ These are the **non-negotiable truths** of HyPaper. If a change violates an inva
 
 **Enforcement**: Validate inputs before writing to Redis. The order matcher should also validate prices read from Redis before using them.
 
-**Known Violation**: `clampPrice()` passes NaN through unchanged. The matcher's JSON parse succeeds on `{"yes":"NaN"}` but operations on NaN are silently wrong.
+**Known Violations**: None (fixed 2026-03-13 — `clampPrice()` validates `isFinite()`, `executeFill()` validates fill price)
 
 ### INV-XCOMP-002: Type Consistency Across Layers
 
@@ -165,7 +162,7 @@ These are the **non-negotiable truths** of HyPaper. If a change violates an inva
 
 **Rationale**: If an event is not emitted, Postgres history and WebSocket clients become stale.
 
-**Known Violation**: `funding-worker.ts` modifies user balances and position funding fields but does not emit any events. These changes are invisible to pg-sink and WebSocket clients.
+**Known Violations**: None (fixed 2026-03-13 — `funding-worker.ts` now emits `funding` event per charge)
 
 ### INV-XCOMP-004: Resolution Outcome Bounds
 
@@ -173,7 +170,7 @@ These are the **non-negotiable truths** of HyPaper. If a change violates an inva
 
 **Rationale**: The resolver maps `0` → `'yes'` and anything else → `'no'` via a ternary. An unexpected value like `2` would incorrectly resolve as `'no'`.
 
-**Known Violation**: `lm-resolver.ts:51-54` only checks `winningOutcomeIndex == null`, not bounds.
+**Known Violations**: None (fixed 2026-03-13 — `lm-resolver.ts` now validates index is 0 or 1)
 
 ---
 
@@ -193,11 +190,7 @@ These are the **non-negotiable truths** of HyPaper. If a change violates an inva
 
 **Rationale**: Unvalidated input can cause NaN propagation, type errors, or undefined behavior in the engine.
 
-**Known Violations**:
-- `exchange.ts:10`: Missing try-catch on `c.req.json()` — malformed JSON throws uncaught
-- `exchange.ts:40-41`: `Number(o.s) <= 0` passes NaN (NaN comparisons are always false)
-- `hypaper.ts:77`: `typeof balance === 'number'` passes NaN
-- `info.ts:102`: `body.oid` used without type validation in `orderStatus`
+**Known Violations**: None (fixed 2026-03-13 — all routes now validate inputs with try-catch and NaN/Infinity guards)
 
 ---
 
@@ -225,13 +218,13 @@ These are the **non-negotiable truths** of HyPaper. If a change violates an inva
 
 | Date | Invariant | Status | Description |
 |------|-----------|--------|-------------|
-| 2026-03-13 | INV-DATA-002 | OPEN | `clampPrice()` does not reject NaN/Infinity |
-| 2026-03-13 | INV-ORD-001 | OPEN | `executeFill()` doesn't recheck order status |
-| 2026-03-13 | INV-XCOMP-001 | OPEN | NaN prices can be written to Redis |
-| 2026-03-13 | INV-XCOMP-003 | OPEN | Funding charges don't emit events |
-| 2026-03-13 | INV-XCOMP-004 | OPEN | `winningOutcomeIndex` not bounds-checked |
-| 2026-03-13 | INV-API-002 | OPEN | Multiple API routes accept NaN/invalid input |
-| 2026-03-13 | INV-DATA-001 | OPEN | `Number()` used in lm-order.ts validation |
+| 2026-03-13 | INV-DATA-002 | FIXED | `clampPrice()` now validates `isFinite()` before clamping |
+| 2026-03-13 | INV-ORD-001 | FIXED | `executeFill()` rechecks order status from Redis |
+| 2026-03-13 | INV-XCOMP-001 | FIXED | `clampPrice()` and `executeFill()` reject non-finite prices |
+| 2026-03-13 | INV-XCOMP-003 | FIXED | `funding-worker.ts` emits `funding` event per charge |
+| 2026-03-13 | INV-XCOMP-004 | FIXED | `lm-resolver.ts` validates index is 0 or 1 |
+| 2026-03-13 | INV-API-002 | FIXED | All routes validate inputs: try-catch, NaN/Infinity guards |
+| 2026-03-13 | INV-DATA-001 | FIXED | `lm-order.ts` uses Decimal, `lm-order-matcher.ts` uses `lt()` |
 
 ---
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { EventEmitter } from 'node:events';
 import { RedisMock } from './helpers/redis-mock.js';
 import { KEYS } from '../store/keys.js';
 
@@ -33,7 +34,7 @@ describe('FundingWorker', () => {
   beforeEach(() => {
     redisMock.flushall();
     mockConfig.FUNDING_ENABLED = true;
-    worker = new FundingWorker();
+    worker = new FundingWorker(new EventEmitter());
   });
 
   async function seedUser(balance: string) {

@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
 import { config } from '../config.js';
@@ -6,6 +7,11 @@ import { mul, add, neg, isZero } from '../utils/math.js';
 
 export class FundingWorker {
   private intervalId: ReturnType<typeof setInterval> | null = null;
+  private eventBus: EventEmitter;
+
+  constructor(eventBus: EventEmitter) {
+    this.eventBus = eventBus;
+  }
 
   start(): void {
     if (this.intervalId) return;
@@ -88,6 +94,16 @@ export class FundingWorker {
           fundingRate,
           fundingCharge,
         }, 'Applied funding');
+
+        // INV-XCOMP-003: Emit funding event for pg-sink and WebSocket consumers
+        this.eventBus.emit('funding', {
+          userId,
+          coin,
+          szi,
+          fundingRate,
+          fundingCharge,
+          timestamp: Date.now(),
+        });
       }
 
       if (hasCharge) {

@@ -29,7 +29,7 @@ export class Worker {
 
   constructor() {
     this.orderMatcher = new OrderMatcher(eventBus);
-    this.fundingWorker = new FundingWorker();
+    this.fundingWorker = new FundingWorker(eventBus);
     this.priceUpdater = new PriceUpdater(() => {
       // Fire-and-forget match on every price update
       this.orderMatcher.matchAll();

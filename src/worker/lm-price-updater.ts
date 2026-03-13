@@ -150,6 +150,10 @@ export class LmPriceUpdater {
 
   private clampPrice(price: number | string): string {
     const d = D(price.toString());
+    if (!d.isFinite()) {
+      logger.warn({ price }, 'LM clampPrice received non-finite value, defaulting to 0.50');
+      return '0.5';
+    }
     const clamped = d.lessThan('0.01') ? D('0.01') : d.greaterThan('0.99') ? D('0.99') : d;
     return clamped.toDecimalPlaces(4).toString();
   }
