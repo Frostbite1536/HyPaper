@@ -24,6 +24,12 @@ const envSchema = z.object({
   FEE_RATE_MAKER: z.string().default('0.0001'),
   FUNDING_ENABLED: z.coerce.boolean().default(true),
   FUNDING_INTERVAL_MS: z.coerce.number().default(28_800_000),
+  LM_API_URL: z.string().default('https://api.limitless.exchange'),
+  LM_WS_URL: z.string().default('wss://ws.limitless.exchange'),
+  LM_ENABLED: z.coerce.boolean().default(false),
+  LM_DEFAULT_BALANCE: z.coerce.number().default(10_000),
+  LM_POLL_INTERVAL_MS: z.coerce.number().default(30_000),
+  LM_RESOLVER_INTERVAL_MS: z.coerce.number().default(60_000),
 });
 
 export const config = envSchema.parse(process.env);
