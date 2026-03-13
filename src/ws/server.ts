@@ -11,6 +11,9 @@ import type {
   L2BookEvent,
   FillEvent,
   OrderUpdateEvent,
+  LmMidsEvent,
+  LmFillEvent,
+  LmOrderUpdateEvent,
 } from './types.js';
 
 interface ClientState {
@@ -135,6 +138,18 @@ export class HyPaperWsServer {
         this.send(state.ws, { channel: 'l2Book', data: { coin: l2.coin, levels: l2.levels, time: l2.time } });
       }
     }
+
+    // Send snapshot for lmPrices
+    if (sub.type === 'lmPrices') {
+      const pricesRaw: Record<string, string> = await redis.hgetall(KEYS.LM_MARKET_PRICES);
+      if (Object.keys(pricesRaw).length > 0) {
+        const parsed: Record<string, { yes: string; no: string }> = {};
+        for (const [slug, json] of Object.entries(pricesRaw)) {
+          parsed[slug] = JSON.parse(json);
+        }
+        this.send(state.ws, { channel: 'lmPrices', data: { prices: parsed } });
+      }
+    }
   }
 
   private handleUnsubscribe(state: ClientState, sub: WsSubscription): void {
@@ -164,6 +179,12 @@ export class HyPaperWsServer {
         return sub.user ? `orderUpdates:${sub.user}` : null;
       case 'userFills':
         return sub.user ? `userFills:${sub.user}` : null;
+      case 'lmPrices':
+        return 'lmPrices';
+      case 'lmOrderUpdates':
+        return sub.user ? `lmOrderUpdates:${sub.user}` : null;
+      case 'lmUserFills':
+        return sub.user ? `lmUserFills:${sub.user}` : null;
       default:
         return null;
     }
@@ -211,6 +232,29 @@ export class HyPaperWsServer {
         }],
       });
       this.broadcast(`orderUpdates:${event.userId}`, json);
+    });
+
+    // --- Limitless event listeners ---
+
+    this.eventBus.on('lm:mids', (event: LmMidsEvent) => {
+      const json = JSON.stringify({ channel: 'lmPrices', data: { prices: event.prices } });
+      this.broadcast('lmPrices', json);
+    });
+
+    this.eventBus.on('lm:fill', (event: LmFillEvent) => {
+      const json = JSON.stringify({
+        channel: 'lmUserFills',
+        data: { isSnapshot: false, user: event.userId, fills: [event.fill] },
+      });
+      this.broadcast(`lmUserFills:${event.userId}`, json);
+    });
+
+    this.eventBus.on('lm:orderUpdate', (event: LmOrderUpdateEvent) => {
+      const json = JSON.stringify({
+        channel: 'lmOrderUpdates',
+        data: [{ order: event.order, status: event.status }],
+      });
+      this.broadcast(`lmOrderUpdates:${event.userId}`, json);
     });
   }
 

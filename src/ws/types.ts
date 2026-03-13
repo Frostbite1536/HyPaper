@@ -1,4 +1,5 @@
 import type { PaperOrder, PaperFill } from '../types/order.js';
+import type { LmPaperOrder, LmPaperFill } from '../types/limitless-order.js';
 
 // === Inbound (client → server) ===
 
@@ -18,7 +19,10 @@ export type WsSubscription =
   | { type: 'allMids' }
   | { type: 'l2Book'; coin: string }
   | { type: 'orderUpdates'; user: string }
-  | { type: 'userFills'; user: string };
+  | { type: 'userFills'; user: string }
+  | { type: 'lmPrices' }
+  | { type: 'lmOrderUpdates'; user: string }
+  | { type: 'lmUserFills'; user: string };
 
 // === Outbound (server → client) ===
 
@@ -63,11 +67,36 @@ export interface WsUserFillsMessage {
   };
 }
 
+export interface WsLmPricesMessage {
+  channel: 'lmPrices';
+  data: { prices: Record<string, { yes: string; no: string }> };
+}
+
+export interface WsLmOrderUpdateMessage {
+  channel: 'lmOrderUpdates';
+  data: Array<{
+    order: LmPaperOrder;
+    status: string;
+  }>;
+}
+
+export interface WsLmFillMessage {
+  channel: 'lmUserFills';
+  data: {
+    isSnapshot: boolean;
+    user: string;
+    fills: LmPaperFill[];
+  };
+}
+
 export type WsOutboundMessage =
   | WsAllMidsMessage
   | WsL2BookMessage
   | WsOrderUpdateMessage
-  | WsUserFillsMessage;
+  | WsUserFillsMessage
+  | WsLmPricesMessage
+  | WsLmOrderUpdateMessage
+  | WsLmFillMessage;
 
 // === Event bus payloads ===
 
@@ -89,5 +118,21 @@ export interface FillEvent {
 export interface OrderUpdateEvent {
   userId: string;
   order: PaperOrder;
+  status: string;
+}
+
+// Limitless event bus payloads
+export interface LmMidsEvent {
+  prices: Record<string, { yes: string; no: string }>;
+}
+
+export interface LmFillEvent {
+  userId: string;
+  fill: LmPaperFill;
+}
+
+export interface LmOrderUpdateEvent {
+  userId: string;
+  order: LmPaperOrder;
   status: string;
 }
