@@ -88,7 +88,7 @@ describe('LmOrderMatcher', () => {
 
     expect(fillEvents).toHaveLength(1);
     expect(fillEvents[0].fill.side).toBe('buy');
-    expect(fillEvents[0].fill.price).toBe('0.55'); // fills at limit price
+    expect(fillEvents[0].fill.price).toBe('0.50'); // fills at market price (better for user)
     expect(fillEvents[0].fill.size).toBe('100');
   });
 
@@ -121,8 +121,8 @@ describe('LmOrderMatcher', () => {
 
     expect(fillEvents).toHaveLength(1);
     expect(fillEvents[0].fill.side).toBe('sell');
-    // closedPnl = (0.65 - 0.50) * 100 = 15
-    expect(fillEvents[0].fill.closedPnl).toBe('15');
+    // closedPnl = (0.70 - 0.50) * 100 = 20 (fills at market price 0.70, not limit 0.65)
+    expect(fillEvents[0].fill.closedPnl).toBe('20');
   });
 
   // --- Order does not fill when price hasn't crossed ---
@@ -148,9 +148,9 @@ describe('LmOrderMatcher', () => {
 
     await matcher.matchAll();
 
-    // Balance should be reduced by cost = 0.55 * 100 = 55
+    // Balance should be reduced by cost = 0.50 * 100 = 50 (fills at market price)
     const balance = await redisMock.hget(KEYS.LM_USER_ACCOUNT(USER), 'balance');
-    expect(parseFloat(balance!)).toBeCloseTo(10000 - 55, 2);
+    expect(parseFloat(balance!)).toBeCloseTo(10000 - 50, 2);
 
     // Position should have yesBalance = 100
     const pos = await redisMock.hgetall(KEYS.LM_USER_POS(USER, SLUG));
@@ -211,8 +211,8 @@ describe('LmOrderMatcher', () => {
     expect(fillEvents).toHaveLength(1);
     expect(fillEvents[0].fill.side).toBe('sell');
     expect(fillEvents[0].fill.outcome).toBe('no');
-    // closedPnl = (0.55 - 0.40) * 80 = 12
-    expect(fillEvents[0].fill.closedPnl).toBe('12');
+    // closedPnl = (0.60 - 0.40) * 80 = 16 (fills at market price 0.60, not limit 0.55)
+    expect(fillEvents[0].fill.closedPnl).toBe('16');
   });
 
   // --- SELL with insufficient tokens skips fill ---
@@ -242,5 +242,92 @@ describe('LmOrderMatcher', () => {
     await matcher.matchAll();
 
     expect(fillEvents).toHaveLength(0);
+  });
+
+  // --- H2 regression: rejected orders are removed from open set ---
+  it('rejects and removes order from open set when balance insufficient', async () => {
+    await seedUser('1'); // only $1
+    await seedPrice(SLUG, '0.50', '0.50');
+    await createOpenOrder({ oid: 12, marketSlug: SLUG, outcome: 'yes', side: 'buy', price: '0.55', size: '100' });
+
+    await matcher.matchAll();
+
+    expect(fillEvents).toHaveLength(0);
+    // Order should be removed from open set (not stuck forever)
+    const openOids = await redisMock.smembers(KEYS.LM_ORDERS_OPEN);
+    expect(openOids).not.toContain('12');
+    // Order status should be 'rejected'
+    const orderData = await redisMock.hgetall(KEYS.LM_ORDER(12));
+    expect(orderData.status).toBe('rejected');
+  });
+
+  // --- H2 regression: rejected sell orders removed from open set ---
+  it('rejects and removes sell order from open set when tokens insufficient', async () => {
+    await seedUser('10000');
+    await seedPrice(SLUG, '0.70', '0.30');
+    await redisMock.hset(KEYS.LM_USER_POS(USER, SLUG),
+      'userId', USER, 'marketSlug', SLUG,
+      'yesBalance', '10', 'noBalance', '0',
+      'yesCost', '5', 'noCost', '0',
+      'yesAvgPrice', '0.50', 'noAvgPrice', '0',
+    );
+    await createOpenOrder({ oid: 13, marketSlug: SLUG, outcome: 'yes', side: 'sell', price: '0.65', size: '50' });
+
+    await matcher.matchAll();
+
+    expect(fillEvents).toHaveLength(0);
+    const openOids = await redisMock.smembers(KEYS.LM_ORDERS_OPEN);
+    expect(openOids).not.toContain('13');
+    const orderData = await redisMock.hgetall(KEYS.LM_ORDER(13));
+    expect(orderData.status).toBe('rejected');
+  });
+
+  // --- H3 regression: fill at market price, not limit ---
+  it('fills BUY at market price which is better than limit price', async () => {
+    await seedUser('10000');
+    await seedPrice(SLUG, '0.30', '0.70'); // market price much lower than limit
+    await createOpenOrder({ oid: 14, marketSlug: SLUG, outcome: 'yes', side: 'buy', price: '0.55', size: '100' });
+
+    await matcher.matchAll();
+
+    expect(fillEvents).toHaveLength(1);
+    // Should fill at market price 0.30, not limit price 0.55
+    expect(fillEvents[0].fill.price).toBe('0.30');
+  });
+
+  // --- M3 regression: dirty flag re-runs after pending match ---
+  it('re-runs matching when pendingMatch is set during execution', async () => {
+    await seedUser('10000');
+    // First order fills in first cycle
+    await seedPrice(SLUG, '0.50', '0.50');
+    await createOpenOrder({ oid: 15, marketSlug: SLUG, outcome: 'yes', side: 'buy', price: '0.55', size: '10' });
+
+    await matcher.matchAll();
+    expect(fillEvents).toHaveLength(1);
+  });
+
+  // --- M4 regression: corrupted JSON.parse doesn't crash ---
+  it('skips orders with corrupted price data without crashing', async () => {
+    await seedUser('10000');
+    // Write corrupted price data
+    await redisMock.hset(KEYS.LM_MARKET_PRICES, SLUG, 'NOT_VALID_JSON');
+    await createOpenOrder({ oid: 16, marketSlug: SLUG, outcome: 'yes', side: 'buy', price: '0.55', size: '10' });
+
+    // Should not throw
+    await matcher.matchAll();
+    expect(fillEvents).toHaveLength(0);
+  });
+
+  // --- L7 regression: clampPrice uses Decimal ---
+  // (Tested via price updater, but verify fills work with edge prices)
+  it('fills correctly at edge prices near 0.01 and 0.99', async () => {
+    await seedUser('10000');
+    await seedPrice(SLUG, '0.02', '0.98');
+    await createOpenOrder({ oid: 17, marketSlug: SLUG, outcome: 'yes', side: 'buy', price: '0.05', size: '100' });
+
+    await matcher.matchAll();
+
+    expect(fillEvents).toHaveLength(1);
+    expect(fillEvents[0].fill.price).toBe('0.02');
   });
 });

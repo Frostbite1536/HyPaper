@@ -102,14 +102,8 @@ export class LmResolver {
           await redis.del(KEYS.LM_USER_POS(userId, slug));
           await redis.srem(KEYS.LM_USER_POSITIONS(userId), slug);
 
-          // Emit events
+          // Emit fill event (consumed by pg-sink and ws/server)
           this.eventBus.emit('lm:fill', { userId, fill });
-          this.eventBus.emit('lm:resolution', {
-            userId,
-            marketSlug: slug,
-            winningOutcome,
-            payout,
-          });
         }
 
         // Remove users with no remaining positions from active set

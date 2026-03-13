@@ -191,6 +191,11 @@ class PipelineMock {
     return this;
   }
 
+  hgetall(key: string): this {
+    this.commands.push(() => this.redis.hgetall(key));
+    return this;
+  }
+
   sadd(key: string, ...members: string[]): this {
     this.commands.push(() => this.redis.sadd(key, ...members));
     return this;

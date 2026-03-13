@@ -5,6 +5,8 @@ import { KEYS } from '../store/keys.js';
 import { logger } from '../utils/logger.js';
 import type { IncomingMessage } from 'node:http';
 import type { Server } from 'node:http';
+import { getLmOpenOrders } from '../engine/lm-position.js';
+import { getLmUserFills } from '../engine/lm-fill.js';
 import type {
   WsSubscription,
   MidsEvent,
@@ -145,9 +147,33 @@ export class HyPaperWsServer {
       if (Object.keys(pricesRaw).length > 0) {
         const parsed: Record<string, { yes: string; no: string }> = {};
         for (const [slug, json] of Object.entries(pricesRaw)) {
-          parsed[slug] = JSON.parse(json);
+          try {
+            parsed[slug] = JSON.parse(json);
+          } catch { /* skip corrupted */ }
         }
         this.send(state.ws, { channel: 'lmPrices', data: { prices: parsed } });
+      }
+    }
+
+    // Send snapshot for lmOrderUpdates
+    if (sub.type === 'lmOrderUpdates' && sub.user) {
+      const orders = await getLmOpenOrders(sub.user);
+      if (orders.length > 0) {
+        this.send(state.ws, {
+          channel: 'lmOrderUpdates',
+          data: orders.map((o) => ({ order: o, status: 'open' })),
+        });
+      }
+    }
+
+    // Send snapshot for lmUserFills
+    if (sub.type === 'lmUserFills' && sub.user) {
+      const fills = await getLmUserFills(sub.user, 50);
+      if (fills.length > 0) {
+        this.send(state.ws, {
+          channel: 'lmUserFills',
+          data: { isSnapshot: true, user: sub.user, fills },
+        });
       }
     }
   }
@@ -263,9 +289,13 @@ export class HyPaperWsServer {
     if (!subs || subs.size === 0) return;
 
     for (const ws of subs) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(json);
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      if (ws.bufferedAmount > 1024 * 1024) {
+        logger.warn({ buffered: ws.bufferedAmount }, 'Client buffer critical, terminating');
+        ws.terminate();
+        continue;
       }
+      ws.send(json);
     }
   }
 

@@ -4,14 +4,20 @@ import { KEYS } from '../../store/keys.js';
 import { config } from '../../config.js';
 import { logger } from '../../utils/logger.js';
 import { ensureAccount } from '../middleware/auth.js';
+import { cancelOrders } from '../../engine/order.js';
 import { upsertUser, updateUserBalance } from '../../store/pg-sink.js';
 
 export const hypaperRouter = new Hono();
 
 hypaperRouter.post('/', async (c) => {
-  const body = await c.req.json();
-  const type: string = body.type;
-  const user: string | undefined = body.user;
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+  const type = body.type as string;
+  const user = body.user as string | undefined;
 
   if (!type) {
     return c.json({ error: 'Missing type' }, 400);
@@ -27,7 +33,7 @@ hypaperRouter.post('/', async (c) => {
   try {
     switch (type) {
       case 'resetAccount': {
-        // Clear all positions, orders, fills
+        // Clear all positions
         const positionAssets = await redis.smembers(KEYS.USER_POSITIONS(normalizedUser));
         const pipeline = redis.pipeline();
 
@@ -35,25 +41,30 @@ hypaperRouter.post('/', async (c) => {
           pipeline.del(KEYS.USER_POS(normalizedUser, parseInt(asset, 10)));
         }
         pipeline.del(KEYS.USER_POSITIONS(normalizedUser));
+        await pipeline.exec();
 
-        // Cancel all open orders
+        // Cancel only open orders (preserves filled/cancelled history) with events
         const oids = await redis.zrange(KEYS.USER_ORDERS(normalizedUser), 0, -1);
+        const openCancels: { a: number; o: number }[] = [];
         for (const oidStr of oids) {
           const oid = parseInt(oidStr, 10);
-          pipeline.hset(KEYS.ORDER(oid), 'status', 'cancelled', 'updatedAt', Date.now().toString());
-          pipeline.srem(KEYS.ORDERS_OPEN, oidStr);
-          pipeline.srem(KEYS.ORDERS_TRIGGERS, oidStr);
+          const orderData = await redis.hgetall(KEYS.ORDER(oid));
+          if (orderData.status === 'open') {
+            openCancels.push({ a: parseInt(orderData.asset, 10), o: oid });
+          }
+        }
+        if (openCancels.length > 0) {
+          await cancelOrders(normalizedUser, openCancels);
         }
 
-        pipeline.del(KEYS.USER_ORDERS(normalizedUser));
-        pipeline.del(KEYS.USER_CLOIDS(normalizedUser));
-        pipeline.del(KEYS.USER_FILLS(normalizedUser));
-        pipeline.del(KEYS.USER_FUNDINGS(normalizedUser));
-
-        // Reset balance
-        pipeline.hset(KEYS.USER_ACCOUNT(normalizedUser), 'balance', config.DEFAULT_BALANCE.toString());
-
-        await pipeline.exec();
+        // Clean up remaining data and reset balance
+        const resetPipeline = redis.pipeline();
+        resetPipeline.del(KEYS.USER_ORDERS(normalizedUser));
+        resetPipeline.del(KEYS.USER_CLOIDS(normalizedUser));
+        resetPipeline.del(KEYS.USER_FILLS(normalizedUser));
+        resetPipeline.del(KEYS.USER_FUNDINGS(normalizedUser));
+        resetPipeline.hset(KEYS.USER_ACCOUNT(normalizedUser), 'balance', config.DEFAULT_BALANCE.toString());
+        await resetPipeline.exec();
 
         // Fire-and-forget sync to Postgres
         upsertUser(normalizedUser, config.DEFAULT_BALANCE.toString());

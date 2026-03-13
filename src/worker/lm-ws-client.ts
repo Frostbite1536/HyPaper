@@ -23,6 +23,19 @@ export class LmWebSocketClientWrapper {
     this.client.on('newPriceData', (data) => {
       this.handler('newPriceData', data);
     });
+
+    // Log reconnection attempts (SDK handles re-subscription internally via resubscribeAll)
+    this.client.on('reconnecting', (attempt) => {
+      logger.info({ attempt }, 'Limitless WebSocket reconnecting...');
+    });
+
+    this.client.on('disconnect', (reason) => {
+      logger.warn({ reason }, 'Limitless WebSocket disconnected');
+    });
+
+    this.client.on('error', (err) => {
+      logger.error({ err }, 'Limitless WebSocket error');
+    });
   }
 
   async connect(): Promise<void> {
