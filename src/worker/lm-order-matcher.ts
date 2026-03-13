@@ -1,0 +1,245 @@
+import { EventEmitter } from 'node:events';
+import { redis } from '../store/redis.js';
+import { KEYS } from '../store/keys.js';
+import { logger } from '../utils/logger.js';
+import { D, sub, mul, add, isZero, gt, lt, lte, gte, div } from '../utils/math.js';
+import { nextTid } from '../utils/id.js';
+import type { LmPaperOrder, LmPaperFill, LmPaperPosition } from '../types/limitless-order.js';
+
+export class LmOrderMatcher {
+  private isRunning = false;
+  private eventBus: EventEmitter;
+
+  constructor(eventBus: EventEmitter) {
+    this.eventBus = eventBus;
+  }
+
+  async matchAll(): Promise<void> {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    try {
+      await this.matchOpenOrders();
+    } catch (err) {
+      logger.error({ err }, 'LM order matcher error');
+    } finally {
+      this.isRunning = false;
+    }
+  }
+
+  private async matchOpenOrders(): Promise<void> {
+    const oids = await redis.smembers(KEYS.LM_ORDERS_OPEN);
+    if (oids.length === 0) return;
+
+    for (const oidStr of oids) {
+      const oid = parseInt(oidStr, 10);
+      const data = await redis.hgetall(KEYS.LM_ORDER(oid));
+      if (!data.oid) {
+        await redis.srem(KEYS.LM_ORDERS_OPEN, oidStr);
+        continue;
+      }
+
+      const order = this.parseOrder(data);
+      if (order.status !== 'open') {
+        await redis.srem(KEYS.LM_ORDERS_OPEN, oidStr);
+        continue;
+      }
+
+      // Read current prices for this market
+      const pricesRaw = await redis.hget(KEYS.LM_MARKET_PRICES, order.marketSlug);
+      if (!pricesRaw) continue;
+
+      const prices = JSON.parse(pricesRaw) as { yes: string; no: string };
+      const currentPrice = order.outcome === 'yes' ? prices.yes : prices.no;
+
+      // Check fill condition:
+      // BUY: fill when currentPrice <= order.price
+      // SELL: fill when currentPrice >= order.price
+      const shouldFill = order.side === 'buy'
+        ? lte(currentPrice, order.price)
+        : gte(currentPrice, order.price);
+
+      if (shouldFill) {
+        // Fill at the limit price (better for user)
+        await this.executeFill(order, order.price);
+      }
+    }
+  }
+
+  async executeFill(order: LmPaperOrder, fillPrice: string): Promise<void> {
+    const fillSize = sub(order.size, order.filledSize);
+    if (isZero(fillSize)) return;
+
+    const userId = order.userId;
+    const slug = order.marketSlug;
+    const outcome = order.outcome;
+    const tid = await nextTid();
+    const now = Date.now();
+
+    // Read current position
+    const posData = await redis.hgetall(KEYS.LM_USER_POS(userId, slug));
+    const pos: LmPaperPosition = {
+      userId,
+      marketSlug: slug,
+      yesBalance: posData.yesBalance ?? '0',
+      noBalance: posData.noBalance ?? '0',
+      yesCost: posData.yesCost ?? '0',
+      noCost: posData.noCost ?? '0',
+      yesAvgPrice: posData.yesAvgPrice ?? '0',
+      noAvgPrice: posData.noAvgPrice ?? '0',
+    };
+
+    let closedPnl = '0';
+
+    if (order.side === 'buy') {
+      const cost = mul(fillPrice, fillSize);
+
+      // Check balance
+      const balance = await redis.hget(KEYS.LM_USER_ACCOUNT(userId), 'balance');
+      if (!balance || lt(balance, cost)) {
+        logger.warn({ userId, oid: order.oid }, 'LM fill skipped: insufficient balance');
+        return;
+      }
+
+      // Update position
+      const balanceField = outcome === 'yes' ? 'yesBalance' : 'noBalance';
+      const costField = outcome === 'yes' ? 'yesCost' : 'noCost';
+      const avgField = outcome === 'yes' ? 'yesAvgPrice' : 'noAvgPrice';
+
+      const oldBalance = outcome === 'yes' ? pos.yesBalance : pos.noBalance;
+      const oldCost = outcome === 'yes' ? pos.yesCost : pos.noCost;
+
+      const newBalance = add(oldBalance, fillSize);
+      const newCost = add(oldCost, cost);
+      const newAvgPrice = isZero(newBalance) ? '0' : div(newCost, newBalance);
+
+      const pipeline = redis.pipeline();
+      // Deduct balance
+      pipeline.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', `-${cost}`);
+      // Update position
+      pipeline.hset(KEYS.LM_USER_POS(userId, slug),
+        'userId', userId,
+        'marketSlug', slug,
+        balanceField, newBalance,
+        costField, newCost,
+        avgField, newAvgPrice,
+      );
+      // Track position
+      pipeline.sadd(KEYS.LM_USER_POSITIONS(userId), slug);
+      // Mark order filled
+      pipeline.hset(KEYS.LM_ORDER(order.oid),
+        'status', 'filled',
+        'filledSize', order.size,
+        'avgFillPrice', fillPrice,
+        'updatedAt', now.toString(),
+      );
+      // Remove from open orders
+      pipeline.srem(KEYS.LM_ORDERS_OPEN, order.oid.toString());
+      // Track active user
+      pipeline.sadd(KEYS.LM_USERS_ACTIVE, userId);
+      await pipeline.exec();
+    } else {
+      // SELL
+      const tokenBalanceField = outcome === 'yes' ? 'yesBalance' : 'noBalance';
+      const costField = outcome === 'yes' ? 'yesCost' : 'noCost';
+      const avgField = outcome === 'yes' ? 'yesAvgPrice' : 'noAvgPrice';
+      const tokenBalance = outcome === 'yes' ? pos.yesBalance : pos.noBalance;
+      const avgEntryPrice = outcome === 'yes' ? pos.yesAvgPrice : pos.noAvgPrice;
+      const oldCost = outcome === 'yes' ? pos.yesCost : pos.noCost;
+
+      // Check token balance
+      if (lt(tokenBalance, fillSize)) {
+        logger.warn({ userId, oid: order.oid }, 'LM fill skipped: insufficient tokens');
+        return;
+      }
+
+      const proceeds = mul(fillPrice, fillSize);
+      closedPnl = mul(sub(fillPrice, avgEntryPrice), fillSize);
+
+      const newTokenBalance = sub(tokenBalance, fillSize);
+      // Proportionally reduce cost basis
+      const costReduction = mul(avgEntryPrice, fillSize);
+      const newCost = sub(oldCost, costReduction);
+
+      const pipeline = redis.pipeline();
+      // Credit proceeds
+      pipeline.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', proceeds);
+      // Update or clean position
+      if (isZero(newTokenBalance)) {
+        pipeline.hset(KEYS.LM_USER_POS(userId, slug),
+          tokenBalanceField, '0',
+          costField, '0',
+          avgField, '0',
+        );
+        // Check if the other side also zero — if so, remove position
+        const otherBalance = outcome === 'yes' ? pos.noBalance : pos.yesBalance;
+        if (isZero(otherBalance)) {
+          pipeline.del(KEYS.LM_USER_POS(userId, slug));
+          pipeline.srem(KEYS.LM_USER_POSITIONS(userId), slug);
+        }
+      } else {
+        pipeline.hset(KEYS.LM_USER_POS(userId, slug),
+          tokenBalanceField, newTokenBalance,
+          costField, newCost,
+        );
+      }
+      // Mark order filled
+      pipeline.hset(KEYS.LM_ORDER(order.oid),
+        'status', 'filled',
+        'filledSize', order.size,
+        'avgFillPrice', fillPrice,
+        'updatedAt', now.toString(),
+      );
+      pipeline.srem(KEYS.LM_ORDERS_OPEN, order.oid.toString());
+      pipeline.sadd(KEYS.LM_USERS_ACTIVE, userId);
+      await pipeline.exec();
+    }
+
+    // Build fill record
+    const fill: LmPaperFill = {
+      tid,
+      oid: order.oid,
+      userId,
+      marketSlug: slug,
+      outcome,
+      side: order.side,
+      price: fillPrice,
+      size: fillSize,
+      fee: '0',
+      closedPnl,
+      time: now,
+    };
+
+    // Push fill to user's fill list
+    await redis.lpush(KEYS.LM_USER_FILLS(userId), JSON.stringify(fill));
+
+    // Update order object for events
+    const filledOrder: LmPaperOrder = {
+      ...order,
+      status: 'filled',
+      filledSize: order.size,
+      avgFillPrice: fillPrice,
+      updatedAt: now,
+    };
+
+    this.eventBus.emit('lm:fill', { userId, fill });
+    this.eventBus.emit('lm:orderUpdate', { userId, order: filledOrder, status: 'filled' });
+  }
+
+  private parseOrder(data: Record<string, string>): LmPaperOrder {
+    return {
+      oid: parseInt(data.oid, 10),
+      userId: data.userId,
+      marketSlug: data.marketSlug,
+      outcome: data.outcome as 'yes' | 'no',
+      side: data.side as 'buy' | 'sell',
+      price: data.price,
+      size: data.size,
+      orderType: data.orderType as 'limit' | 'market',
+      status: data.status as LmPaperOrder['status'],
+      filledSize: data.filledSize ?? '0',
+      avgFillPrice: data.avgFillPrice ?? '0',
+      createdAt: parseInt(data.createdAt, 10),
+      updatedAt: parseInt(data.updatedAt, 10),
+    };
+  }
+}
