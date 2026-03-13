@@ -7,7 +7,12 @@ import { HlWebSocketClient } from './ws-client.js';
 import { PriceUpdater } from './price-updater.js';
 import { OrderMatcher } from './order-matcher.js';
 import { FundingWorker } from './funding-worker.js';
+import { LmPriceUpdater } from './lm-price-updater.js';
+import { LmWebSocketClientWrapper } from './lm-ws-client.js';
+import { LmOrderMatcher } from './lm-order-matcher.js';
+import { LmResolver } from './lm-resolver.js';
 import type { HlMeta, HlAssetCtx } from '../types/hl.js';
+import type { OrderbookUpdate } from '@limitless-exchange/sdk';
 
 export const eventBus = new EventEmitter();
 
@@ -16,6 +21,10 @@ export class Worker {
   private priceUpdater: PriceUpdater;
   private orderMatcher: OrderMatcher;
   private fundingWorker: FundingWorker;
+  private lmPriceUpdater: LmPriceUpdater | null = null;
+  private lmWsClient: LmWebSocketClientWrapper | null = null;
+  private lmOrderMatcher: LmOrderMatcher | null = null;
+  private lmResolver: LmResolver | null = null;
 
   constructor() {
     this.orderMatcher = new OrderMatcher(eventBus);
@@ -28,6 +37,25 @@ export class Worker {
     this.wsClient = new HlWebSocketClient((channel, data) => {
       this.priceUpdater.handleMessage(channel, data);
     });
+
+    if (config.LM_ENABLED) {
+      this.lmOrderMatcher = new LmOrderMatcher(eventBus);
+      this.lmPriceUpdater = new LmPriceUpdater(eventBus);
+
+      this.lmWsClient = new LmWebSocketClientWrapper((event, data) => {
+        if (event === 'orderbookUpdate') {
+          const update = data as OrderbookUpdate;
+          this.lmPriceUpdater!.handleOrderbookUpdate(update.marketSlug, update.orderbook);
+        }
+      });
+
+      this.lmResolver = new LmResolver(eventBus);
+
+      // Wire up: when prices change, run matcher
+      eventBus.on('lm:mids', () => {
+        this.lmOrderMatcher!.matchAll();
+      });
+    }
   }
 
   async start(): Promise<void> {
@@ -42,6 +70,20 @@ export class Worker {
     this.wsClient!.subscribe({ type: 'activeAssetCtx' });
 
     this.fundingWorker.start();
+
+    if (config.LM_ENABLED) {
+      await this.lmPriceUpdater!.seedMarkets();
+
+      const marketsRaw: Record<string, string> = await redis.hgetall(KEYS.LM_MARKETS);
+      const slugs = Object.keys(marketsRaw);
+
+      await this.lmWsClient!.connect();
+      await this.lmWsClient!.setMarketSlugs(slugs);
+      this.lmPriceUpdater!.startPolling();
+      this.lmResolver!.start();
+
+      logger.info({ markets: slugs.length }, 'Limitless worker started');
+    }
 
     logger.info('Worker started');
   }
@@ -106,6 +148,12 @@ export class Worker {
   }
 
   stop(): void {
+    if (config.LM_ENABLED) {
+      this.lmResolver?.stop();
+      this.lmPriceUpdater?.stopPolling();
+      this.lmWsClient?.close();
+    }
+
     this.fundingWorker.stop();
     this.wsClient?.close();
     logger.info('Worker stopped');

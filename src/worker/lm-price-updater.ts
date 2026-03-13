@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { HttpClient, MarketFetcher } from '@limitless-exchange/sdk';
-import type { Market } from '@limitless-exchange/sdk';
+import type { OrderbookData } from '@limitless-exchange/sdk';
 import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
 import { config } from '../config.js';
@@ -82,7 +82,7 @@ export class LmPriceUpdater {
 
   async handleOrderbookUpdate(
     slug: string,
-    orderbook: { bids: Array<{ price: number; size: string }>; asks: Array<{ price: number; size: string }>; adjustedMidpoint?: number },
+    orderbook: OrderbookData,
   ): Promise<void> {
     let yesPrice: string;
 
