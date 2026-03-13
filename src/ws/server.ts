@@ -136,8 +136,12 @@ export class HyPaperWsServer {
     if (sub.type === 'l2Book') {
       const l2Raw = await redis.get(KEYS.MARKET_L2(sub.coin));
       if (l2Raw) {
-        const l2 = JSON.parse(l2Raw);
-        this.send(state.ws, { channel: 'l2Book', data: { coin: l2.coin, levels: l2.levels, time: l2.time } });
+        try {
+          const l2 = JSON.parse(l2Raw);
+          this.send(state.ws, { channel: 'l2Book', data: { coin: l2.coin, levels: l2.levels, time: l2.time } });
+        } catch {
+          logger.warn({ coin: sub.coin }, 'Corrupted L2 data in Redis, skipping snapshot');
+        }
       }
     }
 

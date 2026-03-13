@@ -36,7 +36,9 @@ export class Worker {
     }, eventBus);
 
     this.wsClient = new HlWebSocketClient((channel, data) => {
-      this.priceUpdater.handleMessage(channel, data);
+      this.priceUpdater.handleMessage(channel, data).catch((err) => {
+        logger.error({ err, channel }, 'Price updater message handling failed');
+      });
     });
 
     if (config.LM_ENABLED) {
@@ -148,11 +150,11 @@ export class Worker {
     }
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     if (config.LM_ENABLED) {
       this.lmResolver?.stop();
       this.lmPriceUpdater?.stopPolling();
-      this.lmWsClient?.close();
+      await this.lmWsClient?.close();
     }
 
     this.fundingWorker.stop();

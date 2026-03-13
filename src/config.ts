@@ -13,7 +13,7 @@ const envSchema = z.object({
   HL_WS_URL: z.string().default('wss://api.hyperliquid.xyz/ws'),
   HL_API_URL: z.string().default('https://api.hyperliquid.xyz'),
   PORT: z.coerce.number().default(3000),
-  DEFAULT_BALANCE: z.coerce.number().default(100_000),
+  DEFAULT_BALANCE: z.coerce.number().positive().default(100_000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   WS_RECONNECT_MIN_MS: z.coerce.number().default(1000),
   WS_RECONNECT_MAX_MS: z.coerce.number().default(30000),
@@ -27,7 +27,7 @@ const envSchema = z.object({
   LM_API_URL: z.string().default('https://api.limitless.exchange'),
   LM_WS_URL: z.string().default('wss://ws.limitless.exchange'),
   LM_ENABLED: z.coerce.boolean().default(false),
-  LM_DEFAULT_BALANCE: z.coerce.number().default(10_000),
+  LM_DEFAULT_BALANCE: z.coerce.number().positive().default(10_000),
   LM_POLL_INTERVAL_MS: z.coerce.number().default(30_000),
   LM_RESOLVER_INTERVAL_MS: z.coerce.number().default(60_000),
 });
