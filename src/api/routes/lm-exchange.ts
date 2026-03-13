@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { placeLmOrder, cancelLmOrder, cancelAllLmOrders, ensureLmAccount } from '../../engine/lm-order.js';
 import { logger } from '../../utils/logger.js';
+import { D } from '../../utils/math.js';
 
 export const lmExchangeRouter = new Hono();
 
@@ -42,6 +43,19 @@ lmExchangeRouter.post('/', async (c) => {
         }
         if (!action.size || typeof action.size !== 'string') {
           return c.json({ status: 'err', response: 'Missing size (string)' }, 400);
+        }
+        // Validate price and size are finite positive numbers
+        try {
+          const pxD = D(action.price);
+          const szD = D(action.size);
+          if (!pxD.isFinite() || pxD.lessThanOrEqualTo(0)) {
+            return c.json({ status: 'err', response: 'Price must be a finite positive number' }, 400);
+          }
+          if (!szD.isFinite() || szD.lessThanOrEqualTo(0)) {
+            return c.json({ status: 'err', response: 'Size must be a finite positive number' }, 400);
+          }
+        } catch {
+          return c.json({ status: 'err', response: 'Invalid price or size format' }, 400);
         }
         if (action.orderType !== 'limit' && action.orderType !== 'market') {
           return c.json({ status: 'err', response: 'orderType must be "limit" or "market"' }, 400);
