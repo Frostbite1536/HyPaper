@@ -4,6 +4,10 @@ import { rateLimitMiddleware } from './middleware/rate-limit.js';
 import { exchangeRouter } from './routes/exchange.js';
 import { infoRouter } from './routes/info.js';
 import { hypaperRouter } from './routes/hypaper.js';
+import { config } from '../config.js';
+import { lmExchangeRouter } from './routes/lm-exchange.js';
+import { lmInfoRouter } from './routes/lm-info.js';
+import { lmHypaperRouter } from './routes/lm-hypaper.js';
 import { logger } from '../utils/logger.js';
 
 export const app = new Hono();
@@ -24,10 +28,12 @@ app.onError((err, c) => {
 app.get('/health', (c) => c.json({ status: 'ok', time: Date.now() }));
 
 // Basic response for the bare API domain
+const baseEndpoints = ['/health', '/info', '/exchange', '/hypaper'];
+const lmEndpoints = config.LM_ENABLED ? ['/limitless/exchange', '/limitless/info', '/limitless/hypaper'] : [];
 app.get('/', (c) => c.json({
   status: 'ok',
   service: 'hypaper-api',
-  endpoints: ['/health', '/info', '/exchange', '/hypaper'],
+  endpoints: [...baseEndpoints, ...lmEndpoints],
 }));
 
 // Helpful response for wrong method
@@ -45,3 +51,16 @@ app.use('/hypaper', rateLimitMiddleware);
 app.route('/exchange', exchangeRouter);
 app.route('/info', infoRouter);
 app.route('/hypaper', hypaperRouter);
+
+// Limitless routes (conditional on LM_ENABLED)
+if (config.LM_ENABLED) {
+  app.get('/limitless/exchange', (c) => c.json(postOnlyMsg, 405));
+  app.get('/limitless/info', (c) => c.json(postOnlyMsg, 405));
+  app.get('/limitless/hypaper', (c) => c.json(postOnlyMsg, 405));
+  app.use('/limitless/exchange', rateLimitMiddleware);
+  app.use('/limitless/info', rateLimitMiddleware);
+  app.use('/limitless/hypaper', rateLimitMiddleware);
+  app.route('/limitless/exchange', lmExchangeRouter);
+  app.route('/limitless/info', lmInfoRouter);
+  app.route('/limitless/hypaper', lmHypaperRouter);
+}
