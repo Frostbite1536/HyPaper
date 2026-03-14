@@ -7,9 +7,14 @@ import type { HlExchangeAction } from '../../types/hl.js';
 export const exchangeRouter = new Hono();
 
 exchangeRouter.post('/', async (c) => {
-  const body = await c.req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ status: 'err', response: 'Invalid JSON body' }, 400);
+  }
 
-  const rawWallet: string | undefined = body.wallet;
+  const rawWallet: string | undefined = body.wallet as string | undefined;
   if (!rawWallet || typeof rawWallet !== 'string') {
     return c.json({ status: 'err', response: 'Missing wallet address' }, 400);
   }
@@ -17,7 +22,7 @@ exchangeRouter.post('/', async (c) => {
 
   await ensureAccount(wallet);
 
-  const action: HlExchangeAction = body.action;
+  const action = body.action as HlExchangeAction;
   if (!action || typeof action !== 'object' || !action.type) {
     return c.json({ status: 'err', response: 'Missing or invalid action' }, 400);
   }
@@ -37,8 +42,10 @@ exchangeRouter.post('/', async (c) => {
               typeof o.r !== 'boolean' || !o.t?.limit?.tif) {
             return c.json({ status: 'err', response: 'Invalid order wire format' }, 400);
           }
-          if (Number(o.s) <= 0 || Number(o.p) <= 0) {
-            return c.json({ status: 'err', response: 'Size and price must be positive' }, 400);
+          const sNum = Number(o.s);
+          const pNum = Number(o.p);
+          if (!Number.isFinite(sNum) || sNum <= 0 || !Number.isFinite(pNum) || pNum <= 0) {
+            return c.json({ status: 'err', response: 'Size and price must be finite positive numbers' }, 400);
           }
         }
 

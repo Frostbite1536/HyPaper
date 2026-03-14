@@ -8,6 +8,7 @@ export class HlWebSocketClient {
   private ws: WebSocket | null = null;
   private reconnectDelay: number;
   private shouldReconnect = true;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private handler: WsMessageHandler;
   private subscriptions: object[] = [];
 
@@ -63,12 +64,19 @@ export class HlWebSocketClient {
   private scheduleReconnect(): void {
     if (!this.shouldReconnect) return;
     logger.info({ delay: this.reconnectDelay }, 'Scheduling WS reconnect');
-    setTimeout(() => this.connect(), this.reconnectDelay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, this.reconnectDelay);
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, config.WS_RECONNECT_MAX_MS);
   }
 
   close(): void {
     this.shouldReconnect = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.ws?.close();
   }
 }

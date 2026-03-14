@@ -57,7 +57,12 @@ export class OrderMatcher {
         : gte(midPx, order.limitPx);
 
       if (shouldFill) {
-        const fillPx = await computeFillPrice(order, order.limitPx);
+        // Fill at market price (guaranteed at-or-better than limit)
+        const fillPx = await computeFillPrice(order, midPx);
+        if (!D(fillPx).isFinite()) {
+          logger.warn({ oid: order.oid, fillPx }, 'Skipping fill: non-finite fill price');
+          continue;
+        }
         await this.executeFill(order, fillPx, false); // rested orders are maker
       }
     }
@@ -90,6 +95,10 @@ export class OrderMatcher {
         const basePx = order.isMarket ? midPx : order.limitPx;
         const limitClamp = order.isMarket ? null : order.limitPx;
         const fillPx = await computeFillPrice(order, basePx, limitClamp);
+        if (!D(fillPx).isFinite()) {
+          logger.warn({ oid: order.oid, fillPx }, 'Skipping trigger fill: non-finite fill price');
+          continue;
+        }
         await this.executeFill(order, fillPx, true); // trigger fills are taker
         await redis.srem(KEYS.ORDERS_TRIGGERS, oidStr);
       }

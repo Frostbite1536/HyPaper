@@ -5,12 +5,17 @@ import { KEYS } from '../store/keys.js';
 import { logger } from '../utils/logger.js';
 import type { IncomingMessage } from 'node:http';
 import type { Server } from 'node:http';
+import { getLmOpenOrders } from '../engine/lm-position.js';
+import { getLmUserFills } from '../engine/lm-fill.js';
 import type {
   WsSubscription,
   MidsEvent,
   L2BookEvent,
   FillEvent,
   OrderUpdateEvent,
+  LmMidsEvent,
+  LmFillEvent,
+  LmOrderUpdateEvent,
 } from './types.js';
 
 interface ClientState {
@@ -131,8 +136,48 @@ export class HyPaperWsServer {
     if (sub.type === 'l2Book') {
       const l2Raw = await redis.get(KEYS.MARKET_L2(sub.coin));
       if (l2Raw) {
-        const l2 = JSON.parse(l2Raw);
-        this.send(state.ws, { channel: 'l2Book', data: { coin: l2.coin, levels: l2.levels, time: l2.time } });
+        try {
+          const l2 = JSON.parse(l2Raw);
+          this.send(state.ws, { channel: 'l2Book', data: { coin: l2.coin, levels: l2.levels, time: l2.time } });
+        } catch {
+          logger.warn({ coin: sub.coin }, 'Corrupted L2 data in Redis, skipping snapshot');
+        }
+      }
+    }
+
+    // Send snapshot for lmPrices
+    if (sub.type === 'lmPrices') {
+      const pricesRaw: Record<string, string> = await redis.hgetall(KEYS.LM_MARKET_PRICES);
+      if (Object.keys(pricesRaw).length > 0) {
+        const parsed: Record<string, { yes: string; no: string }> = {};
+        for (const [slug, json] of Object.entries(pricesRaw)) {
+          try {
+            parsed[slug] = JSON.parse(json);
+          } catch { /* skip corrupted */ }
+        }
+        this.send(state.ws, { channel: 'lmPrices', data: { prices: parsed } });
+      }
+    }
+
+    // Send snapshot for lmOrderUpdates
+    if (sub.type === 'lmOrderUpdates' && sub.user) {
+      const orders = await getLmOpenOrders(sub.user);
+      if (orders.length > 0) {
+        this.send(state.ws, {
+          channel: 'lmOrderUpdates',
+          data: orders.map((o) => ({ order: o, status: 'open' })),
+        });
+      }
+    }
+
+    // Send snapshot for lmUserFills
+    if (sub.type === 'lmUserFills' && sub.user) {
+      const fills = await getLmUserFills(sub.user, 50);
+      if (fills.length > 0) {
+        this.send(state.ws, {
+          channel: 'lmUserFills',
+          data: { isSnapshot: true, user: sub.user, fills },
+        });
       }
     }
   }
@@ -164,6 +209,12 @@ export class HyPaperWsServer {
         return sub.user ? `orderUpdates:${sub.user}` : null;
       case 'userFills':
         return sub.user ? `userFills:${sub.user}` : null;
+      case 'lmPrices':
+        return 'lmPrices';
+      case 'lmOrderUpdates':
+        return sub.user ? `lmOrderUpdates:${sub.user}` : null;
+      case 'lmUserFills':
+        return sub.user ? `lmUserFills:${sub.user}` : null;
       default:
         return null;
     }
@@ -212,6 +263,29 @@ export class HyPaperWsServer {
       });
       this.broadcast(`orderUpdates:${event.userId}`, json);
     });
+
+    // --- Limitless event listeners ---
+
+    this.eventBus.on('lm:mids', (event: LmMidsEvent) => {
+      const json = JSON.stringify({ channel: 'lmPrices', data: { prices: event.prices } });
+      this.broadcast('lmPrices', json);
+    });
+
+    this.eventBus.on('lm:fill', (event: LmFillEvent) => {
+      const json = JSON.stringify({
+        channel: 'lmUserFills',
+        data: { isSnapshot: false, user: event.userId, fills: [event.fill] },
+      });
+      this.broadcast(`lmUserFills:${event.userId}`, json);
+    });
+
+    this.eventBus.on('lm:orderUpdate', (event: LmOrderUpdateEvent) => {
+      const json = JSON.stringify({
+        channel: 'lmOrderUpdates',
+        data: [{ order: event.order, status: event.status }],
+      });
+      this.broadcast(`lmOrderUpdates:${event.userId}`, json);
+    });
   }
 
   private broadcast(key: string, json: string): void {
@@ -219,9 +293,13 @@ export class HyPaperWsServer {
     if (!subs || subs.size === 0) return;
 
     for (const ws of subs) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(json);
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      if (ws.bufferedAmount > 1024 * 1024) {
+        logger.warn({ buffered: ws.bufferedAmount }, 'Client buffer critical, terminating');
+        ws.terminate();
+        continue;
       }
+      ws.send(json);
     }
   }
 

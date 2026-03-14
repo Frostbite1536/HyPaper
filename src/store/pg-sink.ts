@@ -1,9 +1,10 @@
 import type { EventEmitter } from 'node:events';
 import { eq } from 'drizzle-orm';
 import { db } from './db.js';
-import { users, orders, fills } from './schema.js';
+import { users, orders, fills, lmOrders, lmFills } from './schema.js';
 import { logger } from '../utils/logger.js';
 import type { PaperOrder, PaperFill } from '../types/order.js';
+import type { LmPaperOrder, LmPaperFill } from '../types/limitless-order.js';
 
 let writeQueue: Promise<void> = Promise.resolve();
 
@@ -74,6 +75,58 @@ export function startPgSink(eventBus: EventEmitter): void {
             filledSz: o.filledSz,
             avgPx: o.avgPx,
             updatedAt: o.updatedAt,
+          },
+        });
+    });
+  });
+
+  // --- Limitless event handlers ---
+
+  eventBus.on('lm:fill', (event: { userId: string; fill: LmPaperFill }) => {
+    enqueueWrite(async () => {
+      await db.insert(lmFills)
+        .values({
+          tid: event.fill.tid,
+          userId: event.userId,
+          oid: event.fill.oid,
+          marketSlug: event.fill.marketSlug,
+          outcome: event.fill.outcome,
+          side: event.fill.side,
+          price: event.fill.price,
+          size: event.fill.size,
+          fee: event.fill.fee,
+          closedPnl: event.fill.closedPnl,
+          time: event.fill.time,
+        })
+        .onConflictDoNothing({ target: lmFills.tid });
+    });
+  });
+
+  eventBus.on('lm:orderUpdate', (event: { userId: string; order: LmPaperOrder; status: string }) => {
+    enqueueWrite(async () => {
+      await db.insert(lmOrders)
+        .values({
+          oid: event.order.oid,
+          userId: event.userId,
+          marketSlug: event.order.marketSlug,
+          outcome: event.order.outcome,
+          side: event.order.side,
+          price: event.order.price,
+          size: event.order.size,
+          orderType: event.order.orderType,
+          status: event.order.status,
+          filledSize: event.order.filledSize,
+          avgFillPrice: event.order.avgFillPrice,
+          createdAt: event.order.createdAt,
+          updatedAt: event.order.updatedAt,
+        })
+        .onConflictDoUpdate({
+          target: lmOrders.oid,
+          set: {
+            status: event.order.status,
+            filledSize: event.order.filledSize,
+            avgFillPrice: event.order.avgFillPrice,
+            updatedAt: event.order.updatedAt,
           },
         });
     });

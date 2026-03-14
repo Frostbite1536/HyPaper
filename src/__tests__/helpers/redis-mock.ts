@@ -70,6 +70,20 @@ export class RedisMock {
     return Object.fromEntries(hash);
   }
 
+  async hdel(key: string, ...fields: string[]): Promise<number> {
+    const hash = this.hashes.get(key);
+    if (!hash) return 0;
+    let count = 0;
+    for (const f of fields) {
+      if (hash.delete(f)) count++;
+    }
+    return count;
+  }
+
+  async hexists(key: string, field: string): Promise<number> {
+    return this.hashes.get(key)?.has(field) ? 1 : 0;
+  }
+
   async hincrbyfloat(key: string, field: string, increment: string): Promise<string> {
     if (!this.hashes.has(key)) this.hashes.set(key, new Map());
     const hash = this.hashes.get(key)!;
@@ -174,6 +188,11 @@ class PipelineMock {
 
   hget(key: string, field: string): this {
     this.commands.push(() => this.redis.hget(key, field));
+    return this;
+  }
+
+  hgetall(key: string): this {
+    this.commands.push(() => this.redis.hgetall(key));
     return this;
   }
 

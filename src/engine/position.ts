@@ -104,19 +104,26 @@ export async function getClearinghouseState(userId: string): Promise<HlClearingh
 
 export async function getOpenOrders(userId: string) {
   const oids = await redis.zrange(KEYS.USER_ORDERS(userId), 0, -1);
-  const orders = [];
+  if (oids.length === 0) return [];
 
+  // Pipeline all reads to avoid N+1
+  const pipeline = redis.pipeline();
   for (const oidStr of oids) {
-    const oid = parseInt(oidStr, 10);
-    const data = await redis.hgetall(KEYS.ORDER(oid));
-    if (!data.oid || data.status !== 'open') continue;
+    pipeline.hgetall(KEYS.ORDER(parseInt(oidStr, 10)));
+  }
+  const results = await pipeline.exec();
+
+  const orders = [];
+  for (let i = 0; i < oids.length; i++) {
+    const [err, data] = results![i] as [Error | null, Record<string, string>];
+    if (err || !data || !data.oid || data.status !== 'open') continue;
 
     orders.push({
       coin: data.coin,
       side: data.isBuy === 'true' ? 'B' : 'A',
       limitPx: data.limitPx,
       sz: data.sz,
-      oid,
+      oid: parseInt(data.oid, 10),
       timestamp: parseInt(data.createdAt, 10),
       origSz: data.sz,
       cloid: data.cloid || undefined,
@@ -128,19 +135,26 @@ export async function getOpenOrders(userId: string) {
 
 export async function getFrontendOpenOrders(userId: string) {
   const oids = await redis.zrange(KEYS.USER_ORDERS(userId), 0, -1);
-  const orders = [];
+  if (oids.length === 0) return [];
 
+  // Pipeline all reads to avoid N+1
+  const pipeline = redis.pipeline();
   for (const oidStr of oids) {
-    const oid = parseInt(oidStr, 10);
-    const data = await redis.hgetall(KEYS.ORDER(oid));
-    if (!data.oid || data.status !== 'open') continue;
+    pipeline.hgetall(KEYS.ORDER(parseInt(oidStr, 10)));
+  }
+  const results = await pipeline.exec();
+
+  const orders = [];
+  for (let i = 0; i < oids.length; i++) {
+    const [err, data] = results![i] as [Error | null, Record<string, string>];
+    if (err || !data || !data.oid || data.status !== 'open') continue;
 
     orders.push({
       coin: data.coin,
       side: data.isBuy === 'true' ? 'B' : 'A',
       limitPx: data.limitPx,
       sz: data.sz,
-      oid,
+      oid: parseInt(data.oid, 10),
       timestamp: parseInt(data.createdAt, 10),
       origSz: data.sz,
       cloid: data.cloid || undefined,

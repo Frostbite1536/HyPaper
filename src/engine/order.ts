@@ -15,7 +15,13 @@ const matcher = new OrderMatcher(eventBus);
 export async function resolveAssetCoin(asset: number): Promise<string | null> {
   const metaRaw = await redis.get(KEYS.MARKET_META);
   if (!metaRaw) return null;
-  const meta: HlMeta = JSON.parse(metaRaw);
+  let meta: HlMeta;
+  try {
+    meta = JSON.parse(metaRaw);
+  } catch {
+    logger.warn('Corrupted market meta in Redis');
+    return null;
+  }
   if (asset < 0 || asset >= meta.universe.length) return null;
   return meta.universe[asset].name;
 }
@@ -23,7 +29,13 @@ export async function resolveAssetCoin(asset: number): Promise<string | null> {
 export async function getAssetDecimals(asset: number): Promise<number> {
   const metaRaw = await redis.get(KEYS.MARKET_META);
   if (!metaRaw) return 0;
-  const meta: HlMeta = JSON.parse(metaRaw);
+  let meta: HlMeta;
+  try {
+    meta = JSON.parse(metaRaw);
+  } catch {
+    logger.warn('Corrupted market meta in Redis');
+    return 0;
+  }
   if (asset < 0 || asset >= meta.universe.length) return 0;
   return meta.universe[asset].szDecimals;
 }
