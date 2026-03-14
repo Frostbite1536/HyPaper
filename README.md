@@ -50,8 +50,8 @@ Swap `api.hyperliquid.xyz` for your HyPaper URL in your existing HL bot and it j
 ## Quick start
 
 ```bash
-git clone https://github.com/GigabrainGG/HyPaper.git
-cd hypaper-backend
+git clone https://github.com/Frostbite1536/HyPaper.git
+cd HyPaper
 npm install
 docker compose up -d   # starts Redis
 npm run dev            # starts server with hot reload

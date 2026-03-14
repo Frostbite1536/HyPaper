@@ -15,9 +15,9 @@ Configurable via the `PORT` environment variable.
 
 HyPaper has **no authentication**. This mirrors HyperLiquid's public info API and simplifies integration.
 
-- `/info` — fully public. User-specific queries pass `user` (wallet address) in the body.
-- `/exchange` — requires `wallet` in the request body to identify the user.
-- `/hypaper` — uses `user` in the request body.
+- `/info` and `/lm/info` — fully public. User-specific queries pass `user` (wallet address) in the body.
+- `/exchange` and `/lm/exchange` — requires `wallet` in the request body to identify the user.
+- `/hypaper` and `/lm/hypaper` — uses `user` in the request body.
 
 Any string works as a wallet address. Accounts are auto-created on first use with the configured default balance ($100,000).
 
