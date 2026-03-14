@@ -1,6 +1,6 @@
 ---
 title: Quick Start
-description: Get HyPaper running in under 2 minutes
+description: Get HyPaper running in under 2 minutes for HyperLiquid and Limitless paper trading
 ---
 
 ## Prerequisites
@@ -13,8 +13,8 @@ description: Get HyPaper running in under 2 minutes
 <Steps>
   <Step title="Clone the repository">
     ```bash
-    git clone https://github.com/GigabrainGG/HyPaper.git
-    cd hypaper-backend
+    git clone https://github.com/Frostbite1536/HyPaper.git
+    cd HyPaper
     npm install
     ```
   </Step>
@@ -127,3 +127,9 @@ If your SDK sends `nonce`, `signature`, or `vaultAddress`, that's fine — HyPap
 | `LOG_LEVEL` | `info` | Pino log level |
 | `RATE_LIMIT_MAX` | `120` | Max requests per window |
 | `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window (ms) |
+| `LM_ENABLED` | `false` | Enable Limitless prediction markets |
+| `LM_API_URL` | `https://api.limitless.exchange` | Limitless API URL |
+| `LM_WS_URL` | `wss://ws.limitless.exchange` | Limitless WebSocket URL |
+| `LM_DEFAULT_BALANCE` | `10000` | Starting LM balance for new accounts |
+| `LM_POLL_INTERVAL_MS` | `30000` | Price polling fallback interval |
+| `LM_RESOLVER_INTERVAL_MS` | `60000` | Market resolution check interval |

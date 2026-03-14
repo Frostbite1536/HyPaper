@@ -55,8 +55,8 @@ The Dockerfile uses a multi-stage build (node:22-alpine) that strips dev depende
   <Tab title="VPS (Hetzner, DO)">
     ```bash
     # On your server
-    git clone https://github.com/GigabrainGG/HyPaper.git
-    cd hypaper-backend
+    git clone https://github.com/Frostbite1536/HyPaper.git
+    cd HyPaper
     cp .env.example .env
     # Edit .env with your DATABASE_URL and REDIS_URL
 
@@ -80,6 +80,12 @@ The Dockerfile uses a multi-stage build (node:22-alpine) that strips dev depende
 | `LOG_LEVEL` | `info` | No | Log level (debug, info, warn, error) |
 | `RATE_LIMIT_MAX` | `120` | No | Max requests per rate limit window |
 | `RATE_LIMIT_WINDOW_MS` | `60000` | No | Rate limit window in ms |
+| `LM_ENABLED` | `false` | No | Enable Limitless prediction markets |
+| `LM_API_URL` | `https://api.limitless.exchange` | No | Limitless API URL |
+| `LM_WS_URL` | `wss://ws.limitless.exchange` | No | Limitless WebSocket URL |
+| `LM_DEFAULT_BALANCE` | `10000` | No | Starting LM balance for new accounts |
+| `LM_POLL_INTERVAL_MS` | `30000` | No | Price polling fallback interval |
+| `LM_RESOLVER_INTERVAL_MS` | `60000` | No | Market resolution check interval |
 
 ## Database setup
 
