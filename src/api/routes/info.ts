@@ -122,7 +122,8 @@ infoRouter.post('/', async (c) => {
       }
 
       case 'activeAssetCtx': {
-        if (!body.coin) return c.json({ error: 'Missing coin' }, 400);
+        if (!body.coin || typeof body.coin !== 'string') return c.json({ error: 'Missing coin' }, 400);
+        if (!/^[A-Za-z0-9@-]+$/.test(body.coin)) return c.json({ error: 'Invalid coin format' }, 400);
         const ctx = await redis.hgetall(KEYS.MARKET_CTX(body.coin));
         return c.json({ coin: body.coin, ctx });
       }
