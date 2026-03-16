@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
 import { logger } from '../utils/logger.js';
-import { D, sub, mul, add, isZero, gt, lt, lte, gte, div } from '../utils/math.js';
+import { D, sub, mul, add, isZero, gt, lt, lte, gte, div, neg } from '../utils/math.js';
 import { nextTid } from '../utils/id.js';
 import type { LmPaperOrder, LmPaperFill, LmPaperPosition } from '../types/limitless-order.js';
 
@@ -125,7 +125,7 @@ export class LmOrderMatcher {
       const cost = mul(fillPrice, fillSize);
 
       // Atomic balance deduction: deduct first, check result, rollback if negative
-      const newBalanceStr = await redis.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', `-${cost}`);
+      const newBalanceStr = await redis.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', neg(cost));
       if (lt(newBalanceStr, '0')) {
         // Rollback: re-add the deducted amount
         await redis.hincrbyfloat(KEYS.LM_USER_ACCOUNT(userId), 'balance', cost);
@@ -178,9 +178,8 @@ export class LmOrderMatcher {
       const oldCost = outcome === 'yes' ? pos.yesCost : pos.noCost;
 
       // Atomic token balance deduction: deduct first, check result, rollback if negative
-      const negFillSize = `-${fillSize}`;
       const newTokenBalanceStr = await redis.hincrbyfloat(
-        KEYS.LM_USER_POS(userId, slug), tokenBalanceField, negFillSize,
+        KEYS.LM_USER_POS(userId, slug), tokenBalanceField, neg(fillSize),
       );
       if (lt(newTokenBalanceStr, '0')) {
         // Rollback: re-add the deducted amount

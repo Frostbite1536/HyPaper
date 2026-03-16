@@ -1,6 +1,6 @@
 import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
-import { D, add, sub, mul, div, abs, gt, lt, isZero, neg } from '../utils/math.js';
+import { D, add, sub, mul, div, abs, gt, lt, lte, isZero, neg } from '../utils/math.js';
 
 export async function calculateAccountValue(userId: string): Promise<string> {
   const balance = await getBalance(userId);
@@ -62,7 +62,7 @@ export async function calculateTotalMarginUsed(userId: string): Promise<string> 
     if (!midPx) continue;
 
     const lev = await redis.hgetall(KEYS.USER_LEV(userId, asset));
-    const leverage = lev.leverage ? parseInt(lev.leverage, 10) : 20;
+    const leverage = lev.leverage ? parseFloat(lev.leverage) : 20;
 
     const posValue = mul(abs(pos.szi), midPx);
     const margin = div(posValue, leverage.toString());
@@ -80,7 +80,7 @@ export async function calculatePositionMarginUsed(
 ): Promise<string> {
   if (isZero(szi)) return '0';
   const lev = await redis.hgetall(KEYS.USER_LEV(userId, asset));
-  const leverage = lev.leverage ? parseInt(lev.leverage, 10) : 20;
+  const leverage = lev.leverage ? parseFloat(lev.leverage) : 20;
   const posValue = mul(abs(szi), markPx);
   return div(posValue, leverage.toString());
 }
@@ -98,7 +98,7 @@ export async function checkMarginForOrder(
 
   // Calculate margin needed for this order
   const lev = await redis.hgetall(KEYS.USER_LEV(userId, asset));
-  const leverage = lev.leverage ? parseInt(lev.leverage, 10) : 20;
+  const leverage = lev.leverage ? parseFloat(lev.leverage) : 20;
 
   // Check if this is reducing an existing position
   const pos = await redis.hgetall(KEYS.USER_POS(userId, asset));
@@ -109,8 +109,16 @@ export async function checkMarginForOrder(
     const isReducing = (isLong && !isBuy) || (!isLong && isBuy);
 
     if (isReducing) {
-      // Reducing a position doesn't require additional margin
-      return true;
+      // If order size <= position size, it's purely reducing — no margin needed
+      const posAbs = abs(currentSzi);
+      if (lte(sz, posAbs)) {
+        return true;
+      }
+      // Order flips position: only the excess beyond closing needs margin
+      const excessSz = sub(sz, posAbs);
+      const orderNotional = mul(excessSz, px);
+      const marginNeeded = div(orderNotional, leverage.toString());
+      return !lt(available, marginNeeded);
     }
   }
 

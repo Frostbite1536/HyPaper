@@ -106,7 +106,7 @@ exchangeRouter.post('/', async (c) => {
         if (typeof action.asset !== 'number' || typeof action.leverage !== 'number' || typeof action.isCross !== 'boolean') {
           return c.json({ status: 'err', response: 'updateLeverage requires asset (number), leverage (number), isCross (boolean)' }, 400);
         }
-        if (action.leverage < 1 || action.leverage > 200) {
+        if (!Number.isFinite(action.leverage) || action.leverage < 1 || action.leverage > 200) {
           return c.json({ status: 'err', response: 'Leverage must be between 1 and 200' }, 400);
         }
 

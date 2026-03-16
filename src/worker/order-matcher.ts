@@ -301,7 +301,7 @@ export class OrderMatcher {
     // Mark order as filled
     pipeline.hset(KEYS.ORDER(order.oid),
       'status', 'filled',
-      'filledSz', order.sz,
+      'filledSz', fillSz,
       'avgPx', fillPx,
       'updatedAt', now.toString(),
     );
@@ -327,7 +327,7 @@ export class OrderMatcher {
 
     this.eventBus.emit('orderUpdate', {
       userId,
-      order: { ...order, status: 'filled' as const, filledSz: order.sz, avgPx: fillPx, updatedAt: now },
+      order: { ...order, status: 'filled' as const, filledSz: fillSz, avgPx: fillPx, updatedAt: now },
       status: 'filled',
     });
     this.eventBus.emit('fill', { userId, fill });
