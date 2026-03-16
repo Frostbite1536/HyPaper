@@ -155,8 +155,11 @@ async function cachedProxyToHL(c: any, body: Record<string, unknown>) {
   });
   const data = await res.json();
 
-  const ttl = PROXY_TTL[body.type as string] ?? DEFAULT_PROXY_TTL;
-  proxyCache.set(key, { data, expiry: now + ttl });
+  // Only cache successful responses to avoid serving upstream errors
+  if (res.ok) {
+    const ttl = PROXY_TTL[body.type as string] ?? DEFAULT_PROXY_TTL;
+    proxyCache.set(key, { data, expiry: now + ttl });
+  }
 
   // Evict expired entries when cache grows too large
   if (proxyCache.size > MAX_CACHE_SIZE) {

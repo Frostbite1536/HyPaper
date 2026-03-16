@@ -25,6 +25,7 @@ interface ClientState {
 }
 
 const HEARTBEAT_INTERVAL = 30_000;
+const MAX_SUBSCRIPTIONS_PER_CLIENT = 50;
 
 export class HyPaperWsServer {
   private wss: WebSocketServer;
@@ -115,6 +116,11 @@ export class HyPaperWsServer {
     const key = this.subscriptionKey(sub);
     if (!key) {
       this.send(state.ws, { error: 'Invalid subscription' });
+      return;
+    }
+
+    if (state.subscriptions.size >= MAX_SUBSCRIPTIONS_PER_CLIENT) {
+      this.send(state.ws, { error: 'Too many subscriptions' });
       return;
     }
 
