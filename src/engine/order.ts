@@ -4,13 +4,10 @@ import { logger } from '../utils/logger.js';
 import { lte, gte, isZero, gt, lt } from '../utils/math.js';
 import { nextOid } from '../utils/id.js';
 import { checkMarginForOrder } from './margin.js';
-import { OrderMatcher } from '../worker/order-matcher.js';
 import { computeFillPrice } from '../utils/slippage.js';
-import { eventBus } from '../worker/index.js';
+import { eventBus, orderMatcher as matcher } from '../worker/index.js';
 import type { HlOrderWire, HlCancelRequest, HlCancelByCloidRequest, HlOrderResponseStatus, HlMeta } from '../types/hl.js';
 import type { PaperOrder } from '../types/order.js';
-
-const matcher = new OrderMatcher(eventBus);
 
 export async function resolveAssetCoin(asset: number): Promise<string | null> {
   const metaRaw = await redis.get(KEYS.MARKET_META);

@@ -19,6 +19,9 @@ lmInfoRouter.post('/', async (c) => {
   const user: string | undefined = (body.user as string | undefined)?.toLowerCase();
 
   if (!type) return c.json({ error: 'Missing type' }, 400);
+  if (user && !/^0x[a-f0-9]{40}$/.test(user)) {
+    return c.json({ error: 'Invalid user address format' }, 400);
+  }
 
   try {
     switch (type) {

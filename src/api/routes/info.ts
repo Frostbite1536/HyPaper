@@ -49,7 +49,11 @@ infoRouter.post('/', async (c) => {
     return c.json({ error: 'Invalid JSON body' }, 400);
   }
   const type: string = body.type;
-  const user: string | undefined = body.user?.toLowerCase();
+  const rawUser: string | undefined = body.user as string | undefined;
+  const user: string | undefined = rawUser?.toLowerCase();
+  if (user && !/^0x[a-f0-9]{40}$/.test(user)) {
+    return c.json({ error: 'Invalid user address format' }, 400);
+  }
 
   if (!type) {
     return c.json({ error: 'Missing type' }, 400);

@@ -100,7 +100,7 @@ describe('/exchange validation', () => {
   });
 
   it('rejects missing action', async () => {
-    const res = await post(exchangeRouter, { wallet: '0xuser' });
+    const res = await post(exchangeRouter, { wallet: '0x0000000000000000000000000000000000000001' });
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.response).toContain('action');
@@ -108,7 +108,7 @@ describe('/exchange validation', () => {
 
   it('rejects NaN in order price', async () => {
     const res = await post(exchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order',
         orders: [{
@@ -125,7 +125,7 @@ describe('/exchange validation', () => {
 
   it('rejects Infinity in order size', async () => {
     const res = await post(exchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order',
         orders: [{
@@ -140,7 +140,7 @@ describe('/exchange validation', () => {
 
   it('rejects negative size', async () => {
     const res = await post(exchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order',
         orders: [{
@@ -155,7 +155,7 @@ describe('/exchange validation', () => {
 
   it('rejects zero price', async () => {
     const res = await post(exchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order',
         orders: [{
@@ -174,7 +174,7 @@ describe('/exchange validation', () => {
       t: { limit: { tif: 'Gtc' } },
     }));
     const res = await post(exchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: { type: 'order', orders, grouping: 'na' },
     });
     expect(res.status).toBe(400);
@@ -184,7 +184,7 @@ describe('/exchange validation', () => {
 
   it('accepts valid order and calls placeOrders', async () => {
     const res = await post(exchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order',
         orders: [{
@@ -200,7 +200,7 @@ describe('/exchange validation', () => {
 
   it('rejects cancel with missing cancels array', async () => {
     const res = await post(exchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: { type: 'cancel' },
     });
     expect(res.status).toBe(400);
@@ -208,7 +208,7 @@ describe('/exchange validation', () => {
 
   it('rejects cancel with invalid format', async () => {
     const res = await post(exchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: { type: 'cancel', cancels: [{ a: 'not-a-number', o: 1 }] },
     });
     expect(res.status).toBe(400);
@@ -216,7 +216,7 @@ describe('/exchange validation', () => {
 
   it('rejects unsupported action type', async () => {
     const res = await post(exchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: { type: 'nonexistent' },
     });
     expect(res.status).toBe(400);
@@ -226,7 +226,7 @@ describe('/exchange validation', () => {
 
   it('rejects updateLeverage with out-of-range leverage', async () => {
     const res = await post(exchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: { type: 'updateLeverage', asset: 0, leverage: 500, isCross: true },
     });
     expect(res.status).toBe(400);
@@ -310,7 +310,7 @@ describe('/hypaper validation', () => {
   });
 
   it('rejects missing type', async () => {
-    const res = await post(hypaperRouter, { user: '0xuser' });
+    const res = await post(hypaperRouter, { user: '0x0000000000000000000000000000000000000001' });
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain('type');
@@ -324,47 +324,47 @@ describe('/hypaper validation', () => {
   });
 
   it('rejects setBalance with NaN', async () => {
-    await redisMock.hset(KEYS.USER_ACCOUNT('0xuser'), 'userId', '0xuser', 'balance', '100000', 'createdAt', '0');
-    const res = await post(hypaperRouter, { type: 'setBalance', user: '0xuser', balance: NaN });
+    await redisMock.hset(KEYS.USER_ACCOUNT('0x0000000000000000000000000000000000000001'), 'userId', '0x0000000000000000000000000000000000000001', 'balance', '100000', 'createdAt', '0');
+    const res = await post(hypaperRouter, { type: 'setBalance', user: '0x0000000000000000000000000000000000000001', balance: NaN });
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain('finite');
   });
 
   it('rejects setBalance with Infinity', async () => {
-    await redisMock.hset(KEYS.USER_ACCOUNT('0xuser'), 'userId', '0xuser', 'balance', '100000', 'createdAt', '0');
-    const res = await post(hypaperRouter, { type: 'setBalance', user: '0xuser', balance: Infinity });
+    await redisMock.hset(KEYS.USER_ACCOUNT('0x0000000000000000000000000000000000000001'), 'userId', '0x0000000000000000000000000000000000000001', 'balance', '100000', 'createdAt', '0');
+    const res = await post(hypaperRouter, { type: 'setBalance', user: '0x0000000000000000000000000000000000000001', balance: Infinity });
     expect(res.status).toBe(400);
   });
 
   it('rejects setBalance with negative', async () => {
-    await redisMock.hset(KEYS.USER_ACCOUNT('0xuser'), 'userId', '0xuser', 'balance', '100000', 'createdAt', '0');
-    const res = await post(hypaperRouter, { type: 'setBalance', user: '0xuser', balance: -100 });
+    await redisMock.hset(KEYS.USER_ACCOUNT('0x0000000000000000000000000000000000000001'), 'userId', '0x0000000000000000000000000000000000000001', 'balance', '100000', 'createdAt', '0');
+    const res = await post(hypaperRouter, { type: 'setBalance', user: '0x0000000000000000000000000000000000000001', balance: -100 });
     expect(res.status).toBe(400);
   });
 
   it('accepts valid setBalance', async () => {
-    await redisMock.hset(KEYS.USER_ACCOUNT('0xuser'), 'userId', '0xuser', 'balance', '100000', 'createdAt', '0');
-    const res = await post(hypaperRouter, { type: 'setBalance', user: '0xuser', balance: 50000 });
+    await redisMock.hset(KEYS.USER_ACCOUNT('0x0000000000000000000000000000000000000001'), 'userId', '0x0000000000000000000000000000000000000001', 'balance', '100000', 'createdAt', '0');
+    const res = await post(hypaperRouter, { type: 'setBalance', user: '0x0000000000000000000000000000000000000001', balance: 50000 });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.balance).toBe('50000');
   });
 
   it('returns account info', async () => {
-    await redisMock.hset(KEYS.USER_ACCOUNT('0xuser'),
-      'userId', '0xuser', 'balance', '100000', 'createdAt', '1700000000000',
+    await redisMock.hset(KEYS.USER_ACCOUNT('0x0000000000000000000000000000000000000001'),
+      'userId', '0x0000000000000000000000000000000000000001', 'balance', '100000', 'createdAt', '1700000000000',
     );
-    const res = await post(hypaperRouter, { type: 'getAccountInfo', user: '0xuser' });
+    const res = await post(hypaperRouter, { type: 'getAccountInfo', user: '0x0000000000000000000000000000000000000001' });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.userId).toBe('0xuser');
+    expect(body.userId).toBe('0x0000000000000000000000000000000000000001');
     expect(body.balance).toBe('100000');
   });
 
   it('rejects unknown type', async () => {
-    await redisMock.hset(KEYS.USER_ACCOUNT('0xuser'), 'userId', '0xuser', 'balance', '100000', 'createdAt', '0');
-    const res = await post(hypaperRouter, { type: 'nonexistent', user: '0xuser' });
+    await redisMock.hset(KEYS.USER_ACCOUNT('0x0000000000000000000000000000000000000001'), 'userId', '0x0000000000000000000000000000000000000001', 'balance', '100000', 'createdAt', '0');
+    const res = await post(hypaperRouter, { type: 'nonexistent', user: '0x0000000000000000000000000000000000000001' });
     expect(res.status).toBe(400);
   });
 });

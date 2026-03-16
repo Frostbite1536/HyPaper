@@ -24,10 +24,14 @@ export async function ensureLmAccount(userId: string): Promise<void> {
   const created = await redis.hsetnx(KEYS.LM_USER_ACCOUNT(userId), 'userId', userId);
   if (!created) return;
 
-  await redis.hset(KEYS.LM_USER_ACCOUNT(userId),
+  // Set balance and createdAt in a single pipeline to avoid a window
+  // where another reader sees userId set but balance missing.
+  const pipeline = redis.pipeline();
+  pipeline.hset(KEYS.LM_USER_ACCOUNT(userId),
     'balance', config.LM_DEFAULT_BALANCE.toString(),
     'createdAt', Date.now().toString(),
   );
+  await pipeline.exec();
   upsertUser(userId, config.LM_DEFAULT_BALANCE.toString());
 }
 
@@ -160,7 +164,10 @@ export async function placeLmOrder(
 
     if (shouldFill) {
       // Fill at market price (guaranteed at-or-better than limit)
-      await matcher.executeFill(order, currentPrice);
+      const filled = await matcher.executeFill(order, currentPrice);
+      if (!filled) {
+        return { status: 'error', message: 'Order could not be filled: insufficient balance' };
+      }
       return { status: 'ok', oid };
     }
   }

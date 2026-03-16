@@ -19,6 +19,9 @@ exchangeRouter.post('/', async (c) => {
     return c.json({ status: 'err', response: 'Missing wallet address' }, 400);
   }
   const wallet = rawWallet.toLowerCase();
+  if (!/^0x[a-f0-9]{40}$/.test(wallet)) {
+    return c.json({ status: 'err', response: 'Invalid wallet address format' }, 400);
+  }
 
   await ensureAccount(wallet);
 

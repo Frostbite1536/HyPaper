@@ -27,6 +27,9 @@ hypaperRouter.post('/', async (c) => {
     return c.json({ error: 'Missing user' }, 400);
   }
   const normalizedUser = user.toLowerCase();
+  if (!/^0x[a-f0-9]{40}$/.test(normalizedUser)) {
+    return c.json({ error: 'Invalid user address format' }, 400);
+  }
 
   await ensureAccount(normalizedUser);
 
