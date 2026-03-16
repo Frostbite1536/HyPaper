@@ -61,7 +61,20 @@ export class LmResolver {
 
         logger.info({ slug, winningOutcome }, 'LM market resolved');
 
-        // Resolve all user positions in this market
+        // STEP 1: Remove market prices and cancel open orders FIRST to prevent
+        // any new fills from the order matcher during resolution.
+        await redis.hdel(KEYS.LM_MARKET_PRICES, slug);
+
+        const openOids = await redis.smembers(KEYS.LM_ORDERS_OPEN);
+        for (const oidStr of openOids) {
+          const oid = parseInt(oidStr, 10);
+          const orderData = await redis.hgetall(KEYS.LM_ORDER(oid));
+          if (orderData.marketSlug === slug && orderData.status === 'open') {
+            await cancelLmOrder(orderData.userId, oid);
+          }
+        }
+
+        // STEP 2: Resolve all user positions in this market
         for (const userId of activeUsers) {
           const posData = await redis.hgetall(KEYS.LM_USER_POS(userId, slug));
           if (!posData.yesBalance && !posData.noBalance) continue;
@@ -110,7 +123,7 @@ export class LmResolver {
           this.eventBus.emit('lm:fill', { userId, fill });
         }
 
-        // Remove users with no remaining positions from active set
+        // STEP 3: Clean up active users and market caches
         for (const userId of activeUsers) {
           const remainingSlugs = await redis.smembers(KEYS.LM_USER_POSITIONS(userId));
           if (remainingSlugs.length === 0) {
@@ -118,19 +131,7 @@ export class LmResolver {
           }
         }
 
-        // Cancel any remaining open orders for this market
-        const openOids = await redis.smembers(KEYS.LM_ORDERS_OPEN);
-        for (const oidStr of openOids) {
-          const oid = parseInt(oidStr, 10);
-          const orderData = await redis.hgetall(KEYS.LM_ORDER(oid));
-          if (orderData.marketSlug === slug && orderData.status === 'open') {
-            await cancelLmOrder(orderData.userId, oid);
-          }
-        }
-
-        // Clean up market from caches
         await redis.hdel(KEYS.LM_MARKETS, slug);
-        await redis.hdel(KEYS.LM_MARKET_PRICES, slug);
         await redis.del(KEYS.LM_MARKET_ORDERBOOK(slug));
       } catch (err) {
         logger.warn({ err, slug }, 'Failed to check LM market resolution');
