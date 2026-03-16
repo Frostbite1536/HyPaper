@@ -15,6 +15,7 @@ import type { HlMeta, HlAssetCtx } from '../types/hl.js';
 import type { OrderbookUpdate } from '@limitless-exchange/sdk';
 
 export const eventBus = new EventEmitter();
+export const orderMatcher = new OrderMatcher(eventBus);
 export const lmOrderMatcher = new LmOrderMatcher(eventBus);
 
 export class Worker {
@@ -28,7 +29,7 @@ export class Worker {
   private lmResolver: LmResolver | null = null;
 
   constructor() {
-    this.orderMatcher = new OrderMatcher(eventBus);
+    this.orderMatcher = orderMatcher;
     this.fundingWorker = new FundingWorker(eventBus);
     this.priceUpdater = new PriceUpdater(() => {
       // Fire-and-forget match on every price update

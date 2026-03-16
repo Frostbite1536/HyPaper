@@ -49,6 +49,14 @@ export class RedisMock {
 
   // --- Hash commands ---
 
+  async hsetnx(key: string, field: string, value: string): Promise<number> {
+    if (!this.hashes.has(key)) this.hashes.set(key, new Map());
+    const hash = this.hashes.get(key)!;
+    if (hash.has(field)) return 0;
+    hash.set(field, value);
+    return 1;
+  }
+
   async hset(key: string, ...args: string[]): Promise<number> {
     if (!this.hashes.has(key)) this.hashes.set(key, new Map());
     const hash = this.hashes.get(key)!;

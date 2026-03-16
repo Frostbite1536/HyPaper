@@ -27,6 +27,9 @@ hypaperRouter.post('/', async (c) => {
     return c.json({ error: 'Missing user' }, 400);
   }
   const normalizedUser = user.toLowerCase();
+  if (!/^0x[a-f0-9]{40}$/.test(normalizedUser)) {
+    return c.json({ error: 'Invalid user address format' }, 400);
+  }
 
   await ensureAccount(normalizedUser);
 
@@ -74,8 +77,8 @@ hypaperRouter.post('/', async (c) => {
 
       case 'setBalance': {
         const balance = body.balance;
-        if (balance === undefined || typeof balance !== 'number' || !Number.isFinite(balance) || balance < 0) {
-          return c.json({ error: 'Missing or invalid balance (must be a finite non-negative number)' }, 400);
+        if (balance === undefined || typeof balance !== 'number' || !Number.isFinite(balance) || balance < 0 || balance > 1_000_000_000) {
+          return c.json({ error: 'Missing or invalid balance (must be a finite number between 0 and 1,000,000,000)' }, 400);
         }
         await redis.hset(KEYS.USER_ACCOUNT(normalizedUser), 'balance', balance.toString());
 
@@ -100,6 +103,6 @@ hypaperRouter.post('/', async (c) => {
     }
   } catch (err) {
     logger.error({ err, type }, 'Hypaper error');
-    return c.json({ error: String(err) }, 500);
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });

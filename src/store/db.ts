@@ -6,7 +6,12 @@ import * as schema from './schema.js';
 
 let sql: ReturnType<typeof postgres>;
 
-export let db: ReturnType<typeof drizzle<typeof schema>>;
+// Initialized by connectDb(). Will throw a clear error if used before connection.
+export let db: ReturnType<typeof drizzle<typeof schema>> = new Proxy({} as any, {
+  get(_target, prop) {
+    throw new Error(`Database not initialized. Call connectDb() before using db.${String(prop)}`);
+  },
+});
 
 export async function connectDb(): Promise<void> {
   sql = postgres(config.DATABASE_URL, { max: 10 });

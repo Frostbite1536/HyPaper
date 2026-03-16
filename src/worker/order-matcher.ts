@@ -10,6 +10,7 @@ import type { PaperOrder, PaperFill } from '../types/order.js';
 
 export class OrderMatcher {
   private isRunning = false;
+  private pendingMatch = false;
   private eventBus: EventEmitter;
 
   constructor(eventBus: EventEmitter) {
@@ -17,14 +18,24 @@ export class OrderMatcher {
   }
 
   async matchAll(): Promise<void> {
-    if (this.isRunning) return;
+    if (this.isRunning) {
+      this.pendingMatch = true;
+      return;
+    }
     this.isRunning = true;
     try {
       await this.matchOpenOrders();
       await this.matchTriggerOrders();
+      // Re-run if a price update arrived during the cycle
+      while (this.pendingMatch) {
+        this.pendingMatch = false;
+        await this.matchOpenOrders();
+        await this.matchTriggerOrders();
+      }
     } catch (err) {
       logger.error({ err }, 'Order matcher error');
     } finally {
+      this.pendingMatch = false;
       this.isRunning = false;
     }
   }
@@ -121,6 +132,10 @@ export class OrderMatcher {
   }
 
   async executeFill(order: PaperOrder, fillPx: string, isTaker: boolean = true): Promise<void> {
+    // Recheck order status to prevent race with cancellation
+    const currentStatus = await redis.hget(KEYS.ORDER(order.oid), 'status');
+    if (currentStatus !== 'open') return;
+
     const userId = order.userId;
     const asset = order.asset;
     const fillSz = sub(order.sz, order.filledSz);
@@ -286,7 +301,7 @@ export class OrderMatcher {
     // Mark order as filled
     pipeline.hset(KEYS.ORDER(order.oid),
       'status', 'filled',
-      'filledSz', order.sz,
+      'filledSz', fillSz,
       'avgPx', fillPx,
       'updatedAt', now.toString(),
     );
@@ -312,7 +327,7 @@ export class OrderMatcher {
 
     this.eventBus.emit('orderUpdate', {
       userId,
-      order: { ...order, status: 'filled' as const, filledSz: order.sz, avgPx: fillPx, updatedAt: now },
+      order: { ...order, status: 'filled' as const, filledSz: fillSz, avgPx: fillPx, updatedAt: now },
       status: 'filled',
     });
     this.eventBus.emit('fill', { userId, fill });

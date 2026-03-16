@@ -11,11 +11,19 @@ export async function ensureAccount(wallet: string): Promise<void> {
   const exists = await redis.exists(KEYS.USER_ACCOUNT(wallet));
   if (exists) return;
 
-  await redis.hset(KEYS.USER_ACCOUNT(wallet),
-    'userId', wallet,
+  // Use HSETNX on a sentinel field to atomically claim creation.
+  // If another concurrent request already created the account, this returns 0.
+  const created = await redis.hsetnx(KEYS.USER_ACCOUNT(wallet), 'userId', wallet);
+  if (!created) return;
+
+  // Set balance and createdAt in a single pipeline to avoid a window
+  // where another reader sees userId set but balance missing.
+  const pipeline = redis.pipeline();
+  pipeline.hset(KEYS.USER_ACCOUNT(wallet),
     'balance', config.DEFAULT_BALANCE.toString(),
     'createdAt', Date.now().toString(),
   );
+  await pipeline.exec();
 
   // Fire-and-forget sync to Postgres
   upsertUser(wallet, config.DEFAULT_BALANCE.toString());

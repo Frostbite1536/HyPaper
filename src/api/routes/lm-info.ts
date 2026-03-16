@@ -19,6 +19,9 @@ lmInfoRouter.post('/', async (c) => {
   const user: string | undefined = (body.user as string | undefined)?.toLowerCase();
 
   if (!type) return c.json({ error: 'Missing type' }, 400);
+  if (user && !/^0x[a-f0-9]{40}$/.test(user)) {
+    return c.json({ error: 'Invalid user address format' }, 400);
+  }
 
   try {
     switch (type) {
@@ -39,7 +42,8 @@ lmInfoRouter.post('/', async (c) => {
       }
 
       case 'market': {
-        if (!body.slug) return c.json({ error: 'Missing slug' }, 400);
+        if (!body.slug || typeof body.slug !== 'string') return c.json({ error: 'Missing slug' }, 400);
+        if (!/^[a-zA-Z0-9._-]+$/.test(body.slug)) return c.json({ error: 'Invalid slug format' }, 400);
         const raw = await redis.hget(KEYS.LM_MARKETS, body.slug as string);
         if (!raw) return c.json({ error: 'Market not found' }, 404);
         try {
@@ -51,7 +55,8 @@ lmInfoRouter.post('/', async (c) => {
       }
 
       case 'orderbook': {
-        if (!body.slug) return c.json({ error: 'Missing slug' }, 400);
+        if (!body.slug || typeof body.slug !== 'string') return c.json({ error: 'Missing slug' }, 400);
+        if (!/^[a-zA-Z0-9._-]+$/.test(body.slug)) return c.json({ error: 'Invalid slug format' }, 400);
         const raw = await redis.get(KEYS.LM_MARKET_ORDERBOOK(body.slug as string));
         try {
           return c.json(raw ? JSON.parse(raw) : { bids: [], asks: [], adjustedMidpoint: null });
@@ -81,8 +86,8 @@ lmInfoRouter.post('/', async (c) => {
 
       case 'userFillsByTime': {
         if (!user) return c.json({ error: 'Missing user' }, 400);
-        const startTime = typeof body.startTime === 'number' ? body.startTime : 0;
-        const endTime = typeof body.endTime === 'number' ? body.endTime : undefined;
+        const startTime = typeof body.startTime === 'number' && Number.isFinite(body.startTime) ? body.startTime : 0;
+        const endTime = typeof body.endTime === 'number' && Number.isFinite(body.endTime) ? body.endTime : undefined;
         return c.json(await getLmUserFillsByTime(user, startTime, endTime));
       }
 

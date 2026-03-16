@@ -19,6 +19,9 @@ exchangeRouter.post('/', async (c) => {
     return c.json({ status: 'err', response: 'Missing wallet address' }, 400);
   }
   const wallet = rawWallet.toLowerCase();
+  if (!/^0x[a-f0-9]{40}$/.test(wallet)) {
+    return c.json({ status: 'err', response: 'Invalid wallet address format' }, 400);
+  }
 
   await ensureAccount(wallet);
 
@@ -103,7 +106,7 @@ exchangeRouter.post('/', async (c) => {
         if (typeof action.asset !== 'number' || typeof action.leverage !== 'number' || typeof action.isCross !== 'boolean') {
           return c.json({ status: 'err', response: 'updateLeverage requires asset (number), leverage (number), isCross (boolean)' }, 400);
         }
-        if (action.leverage < 1 || action.leverage > 200) {
+        if (!Number.isFinite(action.leverage) || action.leverage < 1 || action.leverage > 200) {
           return c.json({ status: 'err', response: 'Leverage must be between 1 and 200' }, 400);
         }
 
@@ -123,6 +126,6 @@ exchangeRouter.post('/', async (c) => {
     }
   } catch (err) {
     logger.error({ err, action: action.type }, 'Exchange error');
-    return c.json({ status: 'err', response: String(err) }, 500);
+    return c.json({ status: 'err', response: 'Internal server error' }, 500);
   }
 });

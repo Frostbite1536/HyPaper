@@ -28,10 +28,14 @@ const PROXY_TTL: Record<string, number> = {
 };
 
 const DEFAULT_PROXY_TTL = 5_000;
+const MAX_CACHE_SIZE = 500;
 const proxyCache = new Map<string, CacheEntry>();
 
 function getCacheKey(body: Record<string, unknown>): string {
-  return JSON.stringify(body);
+  // Only cache on known, bounded fields (type + key params) to prevent
+  // attackers from creating unbounded cache entries with arbitrary extra fields.
+  const { type, coin, asset, user, startTime, endTime, interval, ...rest } = body;
+  return JSON.stringify({ type, coin, asset, user, startTime, endTime, interval });
 }
 
 // Endpoints proxied to real HL API
@@ -45,7 +49,11 @@ infoRouter.post('/', async (c) => {
     return c.json({ error: 'Invalid JSON body' }, 400);
   }
   const type: string = body.type;
-  const user: string | undefined = body.user?.toLowerCase();
+  const rawUser: string | undefined = body.user as string | undefined;
+  const user: string | undefined = rawUser?.toLowerCase();
+  if (user && !/^0x[a-f0-9]{40}$/.test(user)) {
+    return c.json({ error: 'Invalid user address format' }, 400);
+  }
 
   if (!type) {
     return c.json({ error: 'Missing type' }, 400);
@@ -95,10 +103,12 @@ infoRouter.post('/', async (c) => {
 
       case 'userFillsByTime': {
         if (!user) return c.json({ error: 'Missing user' }, 400);
+        const startTime = typeof body.startTime === 'number' && Number.isFinite(body.startTime) ? body.startTime : 0;
+        const endTime = typeof body.endTime === 'number' && Number.isFinite(body.endTime) ? body.endTime : undefined;
         const fills = await getUserFillsByTime(
           user,
-          body.startTime ?? 0,
-          body.endTime,
+          startTime,
+          endTime,
         );
         return c.json(fills);
       }
@@ -112,7 +122,8 @@ infoRouter.post('/', async (c) => {
       }
 
       case 'activeAssetCtx': {
-        if (!body.coin) return c.json({ error: 'Missing coin' }, 400);
+        if (!body.coin || typeof body.coin !== 'string') return c.json({ error: 'Missing coin' }, 400);
+        if (!/^[A-Za-z0-9@-]+$/.test(body.coin)) return c.json({ error: 'Invalid coin format' }, 400);
         const ctx = await redis.hgetall(KEYS.MARKET_CTX(body.coin));
         return c.json({ coin: body.coin, ctx });
       }
@@ -124,7 +135,7 @@ infoRouter.post('/', async (c) => {
     }
   } catch (err) {
     logger.error({ err, type }, 'Info error');
-    return c.json({ error: String(err) }, 500);
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
@@ -144,13 +155,26 @@ async function cachedProxyToHL(c: any, body: Record<string, unknown>) {
   });
   const data = await res.json();
 
-  const ttl = PROXY_TTL[body.type as string] ?? DEFAULT_PROXY_TTL;
-  proxyCache.set(key, { data, expiry: now + ttl });
+  // Only cache successful responses to avoid serving upstream errors
+  if (res.ok) {
+    const ttl = PROXY_TTL[body.type as string] ?? DEFAULT_PROXY_TTL;
+    proxyCache.set(key, { data, expiry: now + ttl });
+  }
 
-  // Evict expired entries periodically (keep map from growing unbounded)
-  if (proxyCache.size > 500) {
+  // Evict expired entries when cache grows too large
+  if (proxyCache.size > MAX_CACHE_SIZE) {
     for (const [k, v] of proxyCache) {
       if (v.expiry <= now) proxyCache.delete(k);
+    }
+    // If still over limit after evicting expired, drop oldest entries
+    if (proxyCache.size > MAX_CACHE_SIZE) {
+      const excess = proxyCache.size - MAX_CACHE_SIZE;
+      let removed = 0;
+      for (const k of proxyCache.keys()) {
+        if (removed >= excess) break;
+        proxyCache.delete(k);
+        removed++;
+      }
     }
   }
 

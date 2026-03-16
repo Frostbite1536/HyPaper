@@ -1,16 +1,13 @@
 import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
 import { logger } from '../utils/logger.js';
-import { lte, gte, isZero, gt, lt } from '../utils/math.js';
+import { D, lte, gte, isZero, gt, lt } from '../utils/math.js';
 import { nextOid } from '../utils/id.js';
 import { checkMarginForOrder } from './margin.js';
-import { OrderMatcher } from '../worker/order-matcher.js';
 import { computeFillPrice } from '../utils/slippage.js';
-import { eventBus } from '../worker/index.js';
+import { eventBus, orderMatcher as matcher } from '../worker/index.js';
 import type { HlOrderWire, HlCancelRequest, HlCancelByCloidRequest, HlOrderResponseStatus, HlMeta } from '../types/hl.js';
 import type { PaperOrder } from '../types/order.js';
-
-const matcher = new OrderMatcher(eventBus);
 
 export async function resolveAssetCoin(asset: number): Promise<string | null> {
   const metaRaw = await redis.get(KEYS.MARKET_META);
@@ -74,6 +71,20 @@ async function placeSingleOrder(
   const reduceOnly = wire.r;
   const tif = wire.t.limit.tif;
   const trigger = wire.t.trigger;
+
+  // Validate size and price are finite positive numbers
+  try {
+    const szD = D(sz);
+    if (!szD.isFinite() || szD.lte(0)) return { error: 'Invalid order size' };
+  } catch {
+    return { error: 'Invalid order size' };
+  }
+  try {
+    const pxD = D(limitPx);
+    if (!pxD.isFinite() || pxD.lte(0)) return { error: 'Invalid order price' };
+  } catch {
+    return { error: 'Invalid order price' };
+  }
 
   // For trigger orders
   if (trigger) {
@@ -364,9 +375,13 @@ export async function updateLeverage(
   asset: number,
   isCross: boolean,
   leverage: number,
-): Promise<void> {
+): Promise<{ error?: string }> {
+  if (!Number.isFinite(leverage) || leverage < 1 || leverage > 200) {
+    return { error: 'Leverage must be between 1 and 200' };
+  }
   await redis.hset(KEYS.USER_LEV(userId, asset),
     'leverage', leverage.toString(),
     'isCross', isCross.toString(),
   );
+  return {};
 }

@@ -34,7 +34,7 @@ export async function getClearinghouseState(userId: string): Promise<HlClearingh
     if (!midPx) continue;
 
     const lev = await redis.hgetall(KEYS.USER_LEV(userId, asset));
-    const leverage = lev.leverage ? parseInt(lev.leverage, 10) : 20;
+    const leverage = lev.leverage ? parseFloat(lev.leverage) : 20;
     const isCross = lev.isCross !== 'false';
 
     const posValue = mul(abs(pos.szi), midPx);

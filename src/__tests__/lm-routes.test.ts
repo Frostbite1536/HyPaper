@@ -103,14 +103,14 @@ describe('/limitless/exchange validation', () => {
   });
 
   it('rejects missing action', async () => {
-    const res = await post(lmExchangeRouter, { wallet: '0xuser' });
+    const res = await post(lmExchangeRouter, { wallet: '0x0000000000000000000000000000000000000001' });
     expect(res.status).toBe(400);
   });
 
   it('rejects order with NaN price', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order', marketSlug: 'test', outcome: 'yes',
         side: 'buy', price: 'NaN', size: '10', orderType: 'limit',
@@ -122,9 +122,9 @@ describe('/limitless/exchange validation', () => {
   });
 
   it('rejects order with Infinity size', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order', marketSlug: 'test', outcome: 'yes',
         side: 'buy', price: '0.50', size: 'Infinity', orderType: 'limit',
@@ -134,9 +134,9 @@ describe('/limitless/exchange validation', () => {
   });
 
   it('rejects order with negative price', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order', marketSlug: 'test', outcome: 'yes',
         side: 'buy', price: '-0.50', size: '10', orderType: 'limit',
@@ -146,9 +146,9 @@ describe('/limitless/exchange validation', () => {
   });
 
   it('rejects order with non-numeric price string', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order', marketSlug: 'test', outcome: 'yes',
         side: 'buy', price: 'banana', size: '10', orderType: 'limit',
@@ -160,9 +160,9 @@ describe('/limitless/exchange validation', () => {
   });
 
   it('rejects order with zero size', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order', marketSlug: 'test', outcome: 'yes',
         side: 'buy', price: '0.50', size: '0', orderType: 'limit',
@@ -172,9 +172,9 @@ describe('/limitless/exchange validation', () => {
   });
 
   it('rejects invalid outcome', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order', marketSlug: 'test', outcome: 'maybe',
         side: 'buy', price: '0.50', size: '10', orderType: 'limit',
@@ -186,9 +186,9 @@ describe('/limitless/exchange validation', () => {
   });
 
   it('rejects invalid side', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order', marketSlug: 'test', outcome: 'yes',
         side: 'hold', price: '0.50', size: '10', orderType: 'limit',
@@ -200,9 +200,9 @@ describe('/limitless/exchange validation', () => {
   });
 
   it('rejects invalid orderType', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order', marketSlug: 'test', outcome: 'yes',
         side: 'buy', price: '0.50', size: '10', orderType: 'stop',
@@ -212,12 +212,12 @@ describe('/limitless/exchange validation', () => {
   });
 
   it('accepts valid limit order for existing market', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     await seedMarket('test-market');
     await redisMock.hset(KEYS.LM_MARKET_PRICES, 'test-market', JSON.stringify({ yes: '0.70', no: '0.30' }));
 
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: {
         type: 'order', marketSlug: 'test-market', outcome: 'yes',
         side: 'buy', price: '0.50', size: '10', orderType: 'limit',
@@ -229,27 +229,27 @@ describe('/limitless/exchange validation', () => {
   });
 
   it('rejects cancel with missing orderId', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: { type: 'cancel' },
     });
     expect(res.status).toBe(400);
   });
 
   it('rejects cancelAll with missing marketSlug', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: { type: 'cancelAll' },
     });
     expect(res.status).toBe(400);
   });
 
   it('rejects unsupported action type', async () => {
-    await seedAccount('0xuser');
+    await seedAccount('0x0000000000000000000000000000000000000001');
     const res = await post(lmExchangeRouter, {
-      wallet: '0xuser',
+      wallet: '0x0000000000000000000000000000000000000001',
       action: { type: 'nonexistent' },
     });
     expect(res.status).toBe(400);
@@ -329,8 +329,8 @@ describe('/limitless/info validation', () => {
   });
 
   it('returns balance for user', async () => {
-    await seedAccount('0xuser', '5000');
-    const res = await post(lmInfoRouter, { type: 'balance', user: '0xuser' });
+    await seedAccount('0x0000000000000000000000000000000000000001', '5000');
+    const res = await post(lmInfoRouter, { type: 'balance', user: '0x0000000000000000000000000000000000000001' });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.balance).toBe('5000');
@@ -355,7 +355,7 @@ describe('/limitless/hypaper validation', () => {
   });
 
   it('rejects missing type', async () => {
-    const res = await post(lmHypaperRouter, { user: '0xuser' });
+    const res = await post(lmHypaperRouter, { user: '0x0000000000000000000000000000000000000001' });
     expect(res.status).toBe(400);
   });
 
@@ -367,58 +367,58 @@ describe('/limitless/hypaper validation', () => {
   });
 
   it('rejects setBalance with NaN', async () => {
-    await seedAccount('0xuser');
-    const res = await post(lmHypaperRouter, { type: 'setBalance', user: '0xuser', balance: NaN });
+    await seedAccount('0x0000000000000000000000000000000000000001');
+    const res = await post(lmHypaperRouter, { type: 'setBalance', user: '0x0000000000000000000000000000000000000001', balance: NaN });
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain('finite');
   });
 
   it('rejects setBalance with Infinity', async () => {
-    await seedAccount('0xuser');
-    const res = await post(lmHypaperRouter, { type: 'setBalance', user: '0xuser', balance: Infinity });
+    await seedAccount('0x0000000000000000000000000000000000000001');
+    const res = await post(lmHypaperRouter, { type: 'setBalance', user: '0x0000000000000000000000000000000000000001', balance: Infinity });
     expect(res.status).toBe(400);
   });
 
   it('rejects setBalance with negative value', async () => {
-    await seedAccount('0xuser');
-    const res = await post(lmHypaperRouter, { type: 'setBalance', user: '0xuser', balance: -100 });
+    await seedAccount('0x0000000000000000000000000000000000000001');
+    const res = await post(lmHypaperRouter, { type: 'setBalance', user: '0x0000000000000000000000000000000000000001', balance: -100 });
     expect(res.status).toBe(400);
   });
 
   it('rejects setBalance over 1 billion', async () => {
-    await seedAccount('0xuser');
-    const res = await post(lmHypaperRouter, { type: 'setBalance', user: '0xuser', balance: 2_000_000_000 });
+    await seedAccount('0x0000000000000000000000000000000000000001');
+    const res = await post(lmHypaperRouter, { type: 'setBalance', user: '0x0000000000000000000000000000000000000001', balance: 2_000_000_000 });
     expect(res.status).toBe(400);
   });
 
   it('accepts valid setBalance', async () => {
-    await seedAccount('0xuser');
-    const res = await post(lmHypaperRouter, { type: 'setBalance', user: '0xuser', balance: 5000 });
+    await seedAccount('0x0000000000000000000000000000000000000001');
+    const res = await post(lmHypaperRouter, { type: 'setBalance', user: '0x0000000000000000000000000000000000000001', balance: 5000 });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.balance).toBe('5000');
   });
 
   it('returns account info', async () => {
-    await seedAccount('0xuser');
-    const res = await post(lmHypaperRouter, { type: 'getAccountInfo', user: '0xuser' });
+    await seedAccount('0x0000000000000000000000000000000000000001');
+    const res = await post(lmHypaperRouter, { type: 'getAccountInfo', user: '0x0000000000000000000000000000000000000001' });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.userId).toBe('0xuser');
+    expect(body.userId).toBe('0x0000000000000000000000000000000000000001');
   });
 
   it('resets account', async () => {
-    await seedAccount('0xuser');
-    const res = await post(lmHypaperRouter, { type: 'resetAccount', user: '0xuser' });
+    await seedAccount('0x0000000000000000000000000000000000000001');
+    const res = await post(lmHypaperRouter, { type: 'resetAccount', user: '0x0000000000000000000000000000000000000001' });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.message).toContain('reset');
   });
 
   it('rejects unknown type', async () => {
-    await seedAccount('0xuser');
-    const res = await post(lmHypaperRouter, { type: 'nonexistent', user: '0xuser' });
+    await seedAccount('0x0000000000000000000000000000000000000001');
+    const res = await post(lmHypaperRouter, { type: 'nonexistent', user: '0x0000000000000000000000000000000000000001' });
     expect(res.status).toBe(400);
   });
 });

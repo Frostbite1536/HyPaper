@@ -18,6 +18,9 @@ lmExchangeRouter.post('/', async (c) => {
     return c.json({ status: 'err', response: 'Missing wallet address' }, 400);
   }
   const wallet = rawWallet.toLowerCase();
+  if (!/^0x[a-f0-9]{40}$/.test(wallet)) {
+    return c.json({ status: 'err', response: 'Invalid wallet address format' }, 400);
+  }
   await ensureLmAccount(wallet);
 
   const action = body.action as Record<string, unknown> | undefined;
@@ -31,6 +34,9 @@ lmExchangeRouter.post('/', async (c) => {
         // Validate required fields
         if (!action.marketSlug || typeof action.marketSlug !== 'string') {
           return c.json({ status: 'err', response: 'Missing marketSlug' }, 400);
+        }
+        if (!/^[a-zA-Z0-9._-]+$/.test(action.marketSlug)) {
+          return c.json({ status: 'err', response: 'Invalid marketSlug format' }, 400);
         }
         if (action.outcome !== 'yes' && action.outcome !== 'no') {
           return c.json({ status: 'err', response: 'outcome must be "yes" or "no"' }, 400);
@@ -85,6 +91,9 @@ lmExchangeRouter.post('/', async (c) => {
       case 'cancelAll': {
         if (!action.marketSlug || typeof action.marketSlug !== 'string') {
           return c.json({ status: 'err', response: 'Missing marketSlug' }, 400);
+        }
+        if (!/^[a-zA-Z0-9._-]+$/.test(action.marketSlug)) {
+          return c.json({ status: 'err', response: 'Invalid marketSlug format' }, 400);
         }
         const result = await cancelAllLmOrders(wallet, action.marketSlug);
         return c.json({ status: 'ok', response: { cancelled: result.cancelled } });
