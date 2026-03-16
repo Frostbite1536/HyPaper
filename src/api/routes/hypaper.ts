@@ -100,6 +100,6 @@ hypaperRouter.post('/', async (c) => {
     }
   } catch (err) {
     logger.error({ err, type }, 'Hypaper error');
-    return c.json({ error: String(err) }, 500);
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });

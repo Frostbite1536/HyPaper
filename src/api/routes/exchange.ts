@@ -123,6 +123,6 @@ exchangeRouter.post('/', async (c) => {
     }
   } catch (err) {
     logger.error({ err, action: action.type }, 'Exchange error');
-    return c.json({ status: 'err', response: String(err) }, 500);
+    return c.json({ status: 'err', response: 'Internal server error' }, 500);
   }
 });

@@ -4,7 +4,7 @@ import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
-import { add, isZero } from '../utils/math.js';
+import { add, sub, isZero } from '../utils/math.js';
 import { cancelLmOrder } from '../engine/lm-order.js';
 import { nextTid } from '../utils/id.js';
 import type { LmPaperFill } from '../types/limitless-order.js';
@@ -85,10 +85,8 @@ export class LmResolver {
           const now = Date.now();
 
           const totalCost = add(posData.yesCost ?? '0', posData.noCost ?? '0');
-          const closedPnl = isZero(totalCost) ? payout : (
-            // PnL = payout - total cost invested in this market
-            add(payout, `-${totalCost}`)
-          );
+          // PnL = payout - total cost invested in this market
+          const closedPnl = sub(payout, totalCost);
 
           const fill: LmPaperFill = {
             tid,

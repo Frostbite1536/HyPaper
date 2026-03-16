@@ -17,14 +17,18 @@ function isValidCachedMarket(v: unknown): v is LmCachedMarket {
 
 export async function ensureLmAccount(userId: string): Promise<void> {
   const exists = await redis.exists(KEYS.LM_USER_ACCOUNT(userId));
-  if (!exists) {
-    await redis.hset(KEYS.LM_USER_ACCOUNT(userId),
-      'userId', userId,
-      'balance', config.LM_DEFAULT_BALANCE.toString(),
-      'createdAt', Date.now().toString(),
-    );
-    upsertUser(userId, config.LM_DEFAULT_BALANCE.toString());
-  }
+  if (exists) return;
+
+  // Use HSETNX on a sentinel field to atomically claim creation.
+  // If another concurrent request already created the account, this returns 0.
+  const created = await redis.hsetnx(KEYS.LM_USER_ACCOUNT(userId), 'userId', userId);
+  if (!created) return;
+
+  await redis.hset(KEYS.LM_USER_ACCOUNT(userId),
+    'balance', config.LM_DEFAULT_BALANCE.toString(),
+    'createdAt', Date.now().toString(),
+  );
+  upsertUser(userId, config.LM_DEFAULT_BALANCE.toString());
 }
 
 export async function placeLmOrder(

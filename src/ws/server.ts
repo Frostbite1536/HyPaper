@@ -73,7 +73,9 @@ export class HyPaperWsServer {
     });
 
     ws.on('message', (raw: Buffer) => {
-      this.handleMessage(state, raw);
+      this.handleMessage(state, raw).catch((err) => {
+        logger.warn({ err }, 'WebSocket handleMessage error');
+      });
     });
 
     ws.on('close', () => {

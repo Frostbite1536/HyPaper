@@ -123,7 +123,7 @@ export async function checkMarginForOrder(
 export function calculateLiquidationPrice(
   szi: string,
   entryPx: string,
-  accountValue: string,
+  _accountValue: string,
   leverage: number,
 ): string | null {
   if (isZero(szi)) return null;
@@ -133,7 +133,7 @@ export function calculateLiquidationPrice(
   const margin = div(mul(size, entryPx), leverage.toString());
 
   // Maintenance margin is ~half of initial margin
-  const maintMarginRate = div('1', (leverage * 2).toString());
+  const maintMarginRate = div('1', mul('2', leverage.toString()));
 
   if (isLong) {
     // liqPx = entryPx * (1 - 1/leverage + maintMarginRate)

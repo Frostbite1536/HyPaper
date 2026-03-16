@@ -17,7 +17,13 @@ setInterval(() => {
 }, 60_000).unref();
 
 export const rateLimitMiddleware = createMiddleware(async (c, next) => {
-  const key = c.req.header('x-forwarded-for') ?? 'anon';
+  // Use the leftmost IP from X-Forwarded-For (set by trusted proxy), or
+  // fall back to the socket remote address. The full header is attacker-controlled
+  // so we only trust the first entry (which a proper reverse proxy prepends).
+  const xff = c.req.header('x-forwarded-for');
+  const clientIp = xff ? xff.split(',')[0].trim() : null;
+  const socketAddr = (c.req.raw as unknown as { socket?: { remoteAddress?: string } })?.socket?.remoteAddress;
+  const key = clientIp || socketAddr || 'anon';
   const now = Date.now();
 
   let bucket = buckets.get(key);

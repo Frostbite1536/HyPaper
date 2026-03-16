@@ -11,8 +11,12 @@ export async function ensureAccount(wallet: string): Promise<void> {
   const exists = await redis.exists(KEYS.USER_ACCOUNT(wallet));
   if (exists) return;
 
+  // Use HSETNX on a sentinel field to atomically claim creation.
+  // If another concurrent request already created the account, this returns 0.
+  const created = await redis.hsetnx(KEYS.USER_ACCOUNT(wallet), 'userId', wallet);
+  if (!created) return;
+
   await redis.hset(KEYS.USER_ACCOUNT(wallet),
-    'userId', wallet,
     'balance', config.DEFAULT_BALANCE.toString(),
     'createdAt', Date.now().toString(),
   );

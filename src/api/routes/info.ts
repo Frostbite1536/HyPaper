@@ -28,10 +28,14 @@ const PROXY_TTL: Record<string, number> = {
 };
 
 const DEFAULT_PROXY_TTL = 5_000;
+const MAX_CACHE_SIZE = 500;
 const proxyCache = new Map<string, CacheEntry>();
 
 function getCacheKey(body: Record<string, unknown>): string {
-  return JSON.stringify(body);
+  // Only cache on known, bounded fields (type + key params) to prevent
+  // attackers from creating unbounded cache entries with arbitrary extra fields.
+  const { type, coin, asset, user, startTime, endTime, interval, ...rest } = body;
+  return JSON.stringify({ type, coin, asset, user, startTime, endTime, interval });
 }
 
 // Endpoints proxied to real HL API
@@ -95,10 +99,12 @@ infoRouter.post('/', async (c) => {
 
       case 'userFillsByTime': {
         if (!user) return c.json({ error: 'Missing user' }, 400);
+        const startTime = typeof body.startTime === 'number' && Number.isFinite(body.startTime) ? body.startTime : 0;
+        const endTime = typeof body.endTime === 'number' && Number.isFinite(body.endTime) ? body.endTime : undefined;
         const fills = await getUserFillsByTime(
           user,
-          body.startTime ?? 0,
-          body.endTime,
+          startTime,
+          endTime,
         );
         return c.json(fills);
       }
@@ -124,7 +130,7 @@ infoRouter.post('/', async (c) => {
     }
   } catch (err) {
     logger.error({ err, type }, 'Info error');
-    return c.json({ error: String(err) }, 500);
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
@@ -147,10 +153,20 @@ async function cachedProxyToHL(c: any, body: Record<string, unknown>) {
   const ttl = PROXY_TTL[body.type as string] ?? DEFAULT_PROXY_TTL;
   proxyCache.set(key, { data, expiry: now + ttl });
 
-  // Evict expired entries periodically (keep map from growing unbounded)
-  if (proxyCache.size > 500) {
+  // Evict expired entries when cache grows too large
+  if (proxyCache.size > MAX_CACHE_SIZE) {
     for (const [k, v] of proxyCache) {
       if (v.expiry <= now) proxyCache.delete(k);
+    }
+    // If still over limit after evicting expired, drop oldest entries
+    if (proxyCache.size > MAX_CACHE_SIZE) {
+      const excess = proxyCache.size - MAX_CACHE_SIZE;
+      let removed = 0;
+      for (const k of proxyCache.keys()) {
+        if (removed >= excess) break;
+        proxyCache.delete(k);
+        removed++;
+      }
     }
   }
 

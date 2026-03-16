@@ -7,12 +7,22 @@ import type { PaperOrder, PaperFill } from '../types/order.js';
 import type { LmPaperOrder, LmPaperFill } from '../types/limitless-order.js';
 
 let writeQueue: Promise<void> = Promise.resolve();
+let queueDepth = 0;
+const MAX_QUEUE_DEPTH = 10_000;
 
 function enqueueWrite(task: () => Promise<void>): void {
+  if (queueDepth >= MAX_QUEUE_DEPTH) {
+    logger.warn({ queueDepth }, 'pg-sink: write queue full, dropping write');
+    return;
+  }
+  queueDepth++;
   writeQueue = writeQueue
     .then(task)
     .catch((err) => {
       logger.error({ err }, 'pg-sink: queued write failed');
+    })
+    .finally(() => {
+      queueDepth--;
     });
 }
 

@@ -117,6 +117,7 @@ describe('Fees', () => {
   it('calculates taker fee on direct executeFill (IOC)', async () => {
     await seedUser('100000');
     const order = buildOrder({ sz: '1', limitPx: '50000' });
+    await createOpenOrder({ oid: order.oid, isBuy: order.isBuy, sz: order.sz, limitPx: order.limitPx });
 
     await matcher.executeFill(order, '50000', true);
 
@@ -159,7 +160,8 @@ describe('Fees', () => {
     );
     await redisMock.sadd(KEYS.USER_POSITIONS(USER), '0');
 
-    const order = buildOrder({ isBuy: false, sz: '1', limitPx: '52000' });
+    const order = buildOrder({ oid: 2, isBuy: false, sz: '1', limitPx: '52000' });
+    await createOpenOrder({ oid: order.oid, isBuy: order.isBuy, sz: order.sz, limitPx: order.limitPx });
     await matcher.executeFill(order, '52000', true);
 
     // closedPnl = (52000 - 50000) * 1 = 2000
@@ -174,6 +176,7 @@ describe('Fees', () => {
     await seedUser('100000');
 
     const order = buildOrder({ sz: '1', limitPx: '50000' });
+    await createOpenOrder({ oid: order.oid, isBuy: order.isBuy, sz: order.sz, limitPx: order.limitPx });
     await matcher.executeFill(order, '50000', true);
 
     expect(fillEvents).toHaveLength(1);
@@ -188,6 +191,7 @@ describe('Fees', () => {
     await seedUser('100000');
 
     const order = buildOrder({ sz: '1', limitPx: '50000' });
+    await createOpenOrder({ oid: order.oid, isBuy: order.isBuy, sz: order.sz, limitPx: order.limitPx });
     await matcher.executeFill(order, '50000', true);
 
     const activeUsers = await redisMock.smembers(KEYS.USERS_ACTIVE);
