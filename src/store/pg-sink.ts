@@ -5,6 +5,8 @@ import { users, orders, fills, lmOrders, lmFills } from './schema.js';
 import { logger } from '../utils/logger.js';
 import type { PaperOrder, PaperFill } from '../types/order.js';
 import type { LmPaperOrder, LmPaperFill } from '../types/limitless-order.js';
+import type { FundingEvent } from '../ws/types.js';
+import { nextTid } from '../utils/id.js';
 
 let writeQueue: Promise<void> = Promise.resolve();
 let queueDepth = 0;
@@ -139,6 +141,33 @@ export function startPgSink(eventBus: EventEmitter): void {
             updatedAt: event.order.updatedAt,
           },
         });
+    });
+  });
+
+  // --- Funding event handler (INV-XCOMP-003) ---
+  eventBus.on('funding', (event: FundingEvent) => {
+    enqueueWrite(async () => {
+      const tid = await nextTid();
+      await db.insert(fills)
+        .values({
+          tid,
+          userId: event.userId,
+          oid: 0,
+          coin: event.coin,
+          px: '0',
+          sz: event.szi,
+          side: 'funding' as 'B' | 'A',
+          time: event.timestamp,
+          startPosition: event.szi,
+          dir: 'funding',
+          closedPnl: event.fundingCharge,
+          hash: `funding-${event.userId}-${event.coin}-${event.timestamp}`,
+          crossed: false,
+          fee: '0',
+          cloid: null,
+          feeToken: 'USDC',
+        })
+        .onConflictDoNothing({ target: fills.tid });
     });
   });
 

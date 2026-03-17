@@ -47,12 +47,16 @@ export async function getLmPortfolio(userId: string): Promise<LmPortfolio> {
       pipeline.hget(KEYS.LM_MARKETS, slug);
     }
     const results = await pipeline.exec();
+    if (!results) {
+      logger.warn({ userId }, 'LM portfolio pipeline returned null');
+      return { positions, balance, totalUnrealizedPnl, totalMarketValue, accountValue: balance };
+    }
 
     for (let i = 0; i < slugs.length; i++) {
       const slug = slugs[i];
-      const [, posData] = results![i * 3] as [Error | null, Record<string, string>];
-      const [, pricesRaw] = results![i * 3 + 1] as [Error | null, string | null];
-      const [, marketRaw] = results![i * 3 + 2] as [Error | null, string | null];
+      const [, posData] = results[i * 3] as [Error | null, Record<string, string>];
+      const [, pricesRaw] = results[i * 3 + 1] as [Error | null, string | null];
+      const [, marketRaw] = results[i * 3 + 2] as [Error | null, string | null];
 
       if (!posData || (isZero(posData.yesBalance ?? '0') && isZero(posData.noBalance ?? '0'))) continue;
 

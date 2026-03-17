@@ -3,7 +3,7 @@ import { redis } from '../store/redis.js';
 import { KEYS } from '../store/keys.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
-import { mul, add, neg, isZero } from '../utils/math.js';
+import { mul, add, neg, isZero, lt } from '../utils/math.js';
 
 export class FundingWorker {
   private intervalId: ReturnType<typeof setInterval> | null = null;
@@ -108,6 +108,13 @@ export class FundingWorker {
 
       if (hasCharge) {
         await pipeline.exec();
+
+        // Guard against negative balance from funding charges
+        const balanceAfter = await redis.hget(KEYS.USER_ACCOUNT(userId), 'balance');
+        if (balanceAfter && lt(balanceAfter, '0')) {
+          await redis.hset(KEYS.USER_ACCOUNT(userId), 'balance', '0');
+          logger.warn({ userId, balanceAfter }, 'Balance went negative after funding, clamped to 0');
+        }
       }
     }
   }
