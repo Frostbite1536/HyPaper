@@ -315,6 +315,13 @@ export class OrderMatcher {
 
     await pipeline.exec();
 
+    // Guard against negative balance from losing trades + fees
+    const balanceAfter = await redis.hget(KEYS.USER_ACCOUNT(userId), 'balance');
+    if (balanceAfter && lt(balanceAfter, '0')) {
+      await redis.hset(KEYS.USER_ACCOUNT(userId), 'balance', '0');
+      logger.warn({ userId, balanceAfter }, 'Balance went negative after fill, clamped to 0');
+    }
+
     logger.info({
       oid: order.oid,
       coin: order.coin,

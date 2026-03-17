@@ -13,6 +13,7 @@ import type {
   L2BookEvent,
   FillEvent,
   OrderUpdateEvent,
+  FundingEvent,
   LmMidsEvent,
   LmFillEvent,
   LmOrderUpdateEvent,
@@ -217,6 +218,8 @@ export class HyPaperWsServer {
         return sub.user ? `orderUpdates:${sub.user}` : null;
       case 'userFills':
         return sub.user ? `userFills:${sub.user}` : null;
+      case 'userFunding':
+        return sub.user ? `userFunding:${sub.user}` : null;
       case 'lmPrices':
         return 'lmPrices';
       case 'lmOrderUpdates':
@@ -270,6 +273,21 @@ export class HyPaperWsServer {
         }],
       });
       this.broadcast(`orderUpdates:${event.userId}`, json);
+    });
+
+    this.eventBus.on('funding', (event: FundingEvent) => {
+      const json = JSON.stringify({
+        channel: 'userFunding',
+        data: {
+          user: event.userId,
+          coin: event.coin,
+          szi: event.szi,
+          fundingRate: event.fundingRate,
+          fundingCharge: event.fundingCharge,
+          timestamp: event.timestamp,
+        },
+      });
+      this.broadcast(`userFunding:${event.userId}`, json);
     });
 
     // --- Limitless event listeners ---

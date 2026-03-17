@@ -20,6 +20,7 @@ export type WsSubscription =
   | { type: 'l2Book'; coin: string }
   | { type: 'orderUpdates'; user: string }
   | { type: 'userFills'; user: string }
+  | { type: 'userFunding'; user: string }
   | { type: 'lmPrices' }
   | { type: 'lmOrderUpdates'; user: string }
   | { type: 'lmUserFills'; user: string };
@@ -67,6 +68,18 @@ export interface WsUserFillsMessage {
   };
 }
 
+export interface WsUserFundingMessage {
+  channel: 'userFunding';
+  data: {
+    user: string;
+    coin: string;
+    szi: string;
+    fundingRate: string;
+    fundingCharge: string;
+    timestamp: number;
+  };
+}
+
 export interface WsLmPricesMessage {
   channel: 'lmPrices';
   data: { prices: Record<string, { yes: string; no: string }> };
@@ -94,6 +107,7 @@ export type WsOutboundMessage =
   | WsL2BookMessage
   | WsOrderUpdateMessage
   | WsUserFillsMessage
+  | WsUserFundingMessage
   | WsLmPricesMessage
   | WsLmOrderUpdateMessage
   | WsLmFillMessage;

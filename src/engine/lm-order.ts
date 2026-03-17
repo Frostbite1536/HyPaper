@@ -144,7 +144,15 @@ export async function placeLmOrder(
       return { status: 'error', message: 'Market order could not be filled: no price available' };
     }
 
-    const prices = JSON.parse(pricesRaw) as { yes: string; no: string };
+    let prices: { yes: string; no: string };
+    try {
+      prices = JSON.parse(pricesRaw) as { yes: string; no: string };
+    } catch {
+      await redis.hset(KEYS.LM_ORDER(oid), 'status', 'rejected', 'updatedAt', Date.now().toString());
+      order.status = 'rejected';
+      eventBus.emit('lm:orderUpdate', { userId, order, status: 'rejected' });
+      return { status: 'error', message: 'Market order could not be filled: corrupted price data' };
+    }
     const currentPrice = outcome === 'yes' ? prices.yes : prices.no;
     const filled = await matcher.executeFill(order, currentPrice);
     if (!filled) {
@@ -155,7 +163,15 @@ export async function placeLmOrder(
 
   // LIMIT order
   if (pricesRaw) {
-    const prices = JSON.parse(pricesRaw) as { yes: string; no: string };
+    let prices: { yes: string; no: string };
+    try {
+      prices = JSON.parse(pricesRaw) as { yes: string; no: string };
+    } catch {
+      // Corrupted price data — let order rest as a limit order (will match on next price tick)
+      await redis.sadd(KEYS.LM_ORDERS_OPEN, oid.toString());
+      eventBus.emit('lm:orderUpdate', { userId, order, status: 'open' });
+      return { status: 'ok', oid };
+    }
     const currentPrice = outcome === 'yes' ? prices.yes : prices.no;
 
     const shouldFill = side === 'buy'

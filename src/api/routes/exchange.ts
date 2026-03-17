@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { placeOrders, cancelOrders, cancelByCloid, updateLeverage } from '../../engine/order.js';
 import { ensureAccount } from '../middleware/auth.js';
 import { logger } from '../../utils/logger.js';
+import { D } from '../../utils/math.js';
 import type { HlExchangeAction } from '../../types/hl.js';
 
 export const exchangeRouter = new Hono();
@@ -45,9 +46,13 @@ exchangeRouter.post('/', async (c) => {
               typeof o.r !== 'boolean' || !o.t?.limit?.tif) {
             return c.json({ status: 'err', response: 'Invalid order wire format' }, 400);
           }
-          const sNum = Number(o.s);
-          const pNum = Number(o.p);
-          if (!Number.isFinite(sNum) || sNum <= 0 || !Number.isFinite(pNum) || pNum <= 0) {
+          try {
+            const sD = D(o.s);
+            const pD = D(o.p);
+            if (!sD.isFinite() || sD.lessThanOrEqualTo(0) || !pD.isFinite() || pD.lessThanOrEqualTo(0)) {
+              return c.json({ status: 'err', response: 'Size and price must be finite positive numbers' }, 400);
+            }
+          } catch {
             return c.json({ status: 'err', response: 'Size and price must be finite positive numbers' }, 400);
           }
         }
